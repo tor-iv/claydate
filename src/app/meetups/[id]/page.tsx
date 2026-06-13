@@ -10,33 +10,12 @@ import RsvpBar from "@/components/meetups/RsvpBar";
 import type { UserInfo } from "@/components/meetups/RsvpBar";
 import CommentThread from "@/components/meetups/CommentThread";
 import type { CommentEntry } from "@/components/meetups/CommentThread";
+import { formatLongDate, formatTime12h } from "@/lib/dates";
 
 interface MeetupDetailPageProps {
   params: Promise<{ id: string }>;
 }
 
-/** Format "HH:MM" to "3:30 PM" style — inline helper, no external import */
-function format12h(time: string): string {
-  const [hStr, mStr] = time.split(":");
-  const h = parseInt(hStr, 10);
-  const m = mStr ?? "00";
-  const period = h >= 12 ? "PM" : "AM";
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${h12}:${m} ${period}`;
-}
-
-/** Format "YYYY-MM-DD" to "Saturday, June 14" style */
-function formatDate(dateStr: string): string {
-  const [y, mo, d] = dateStr.split("-").map(Number);
-  // Use UTC noon to avoid any timezone offset flipping the day
-  const date = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0));
-  return date.toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 export default async function MeetupDetailPage({ params }: MeetupDetailPageProps) {
   const { id } = await params;
@@ -102,21 +81,30 @@ export default async function MeetupDetailPage({ params }: MeetupDetailPageProps
     const myRsvp = rsvpRows.find((r) => r.user_id === currentUser.userId);
     myStatus = myRsvp?.status ?? null;
 
-    // Get current user's avatar info for optimistic updates
-    const myUserRows = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, currentUser.userId))
-      .limit(1);
-
-    if (myUserRows.length > 0) {
-      const u = myUserRows[0];
+    if (myRsvp) {
+      // Already have avatar info from the rsvp join — skip the extra query
       myInfo = {
-        name: u.name,
-        avatarShape: u.avatar_shape,
-        avatarGlaze: u.avatar_glaze,
-        avatarPattern: u.avatar_pattern,
+        name: myRsvp.name,
+        avatarShape: myRsvp.avatar_shape,
+        avatarGlaze: myRsvp.avatar_glaze,
+        avatarPattern: myRsvp.avatar_pattern,
       };
+    } else {
+      const myUserRows = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, currentUser.userId))
+        .limit(1);
+
+      if (myUserRows.length > 0) {
+        const u = myUserRows[0];
+        myInfo = {
+          name: u.name,
+          avatarShape: u.avatar_shape,
+          avatarGlaze: u.avatar_glaze,
+          avatarPattern: u.avatar_pattern,
+        };
+      }
     }
   }
 
@@ -183,7 +171,7 @@ export default async function MeetupDetailPage({ params }: MeetupDetailPageProps
                     color: "#2C1810",
                   }}
                 >
-                  {formatDate(meetup.date)}
+                  {formatLongDate(meetup.date)}
                 </p>
                 <p
                   style={{
@@ -192,7 +180,7 @@ export default async function MeetupDetailPage({ params }: MeetupDetailPageProps
                     color: "var(--color-clay-ink-muted)",
                   }}
                 >
-                  {format12h(meetup.time)}
+                  {formatTime12h(meetup.time)}
                 </p>
               </div>
             </div>

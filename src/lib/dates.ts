@@ -122,6 +122,21 @@ export function formatFriendlyDate(iso: string): string {
 }
 
 /**
+ * Formats an ISO date string as a long label, e.g. "Saturday, June 20".
+ * Built from a UTC-noon timestamp so a UTC server can never flip the day.
+ */
+export function formatLongDate(iso: string): string {
+  const [y, mo, d] = iso.split("-").map(Number);
+  const date = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0));
+  return date.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/**
  * Formats a 24h time string "HH:MM" as 12h with am/pm, e.g. "6:00 pm".
  */
 export function formatTime12h(time: string): string {
