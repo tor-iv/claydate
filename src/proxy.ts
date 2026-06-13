@@ -14,11 +14,8 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow API upload endpoint and uploaded files
-  if (
-    pathname.startsWith("/api/upload") ||
-    pathname.startsWith("/uploads/")
-  ) {
+  // Allow API upload endpoint (exact) and uploaded files (prefix)
+  if (pathname === "/api/upload" || pathname.startsWith("/uploads/")) {
     return NextResponse.next();
   }
 
