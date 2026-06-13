@@ -535,62 +535,34 @@ export function buildThrown2Path(h: number, widths: number[], edge: number = 0):
   const footY = bandY[0];
   const rFoot = rightPts[0].x;
 
-  // ── One profile, tension driven by the edge dial ─────────────────────────
-  // edge=0 → α≈0.5 (round, centripetal Catmull-Rom)
-  // edge=1 → α≈0.03 (control points collapse to the stops → near-straight facets)
-  // Anything between is a smoothly straightening pot.
-  const alpha = 0.5 - clamp01(edge) * 0.47;
+  // ── Vertical-tangent spline, smoothness driven by the edge dial ──────────
+  // Each band point is treated as a single point the profile flows through
+  // with a VERTICAL tangent, so the silhouette bulges out and in as one
+  // continuous wavy curve (round) rather than flat faceted sections.
+  // k = handle length as a fraction of each segment's height.
+  //   edge=0 → k≈0.55 (lush round bulges)
+  //   edge=1 → k≈0.02 (handles collapse → straight facets)
+  const k = 0.55 - clamp01(edge) * 0.53;
 
-  // Catmull-Rom to cubic Bezier conversion for a chain of points.
-  // Phantom endpoints make the ends feel natural.
-  const phantom0: Pt = {
-    x: rightPts[0].x - (rightPts[1].x - rightPts[0].x),
-    y: rightPts[0].y - (rightPts[1].y - rightPts[0].y),
-  };
-  const phantomN: Pt = {
-    x: rightPts[N - 1].x + (rightPts[N - 1].x - rightPts[N - 2].x),
-    y: rightPts[N - 1].y + (rightPts[N - 1].y - rightPts[N - 2].y),
-  };
-  const allPts: Pt[] = [phantom0, ...rightPts, phantomN];
-
-  function catmullToBez(p0: Pt, p1: Pt, p2: Pt, p3: Pt): [Pt, Pt] {
-    const cp1: Pt = {
-      x: p1.x + (p2.x - p0.x) * alpha,
-      y: p1.y + (p2.y - p0.y) * alpha,
-    };
-    const cp2: Pt = {
-      x: p2.x - (p3.x - p1.x) * alpha,
-      y: p2.y - (p3.y - p1.y) * alpha,
-    };
-    return [cp1, cp2];
+  /** Cubic segments through a point chain, vertical tangents at every point. */
+  function smoothSegments(pts: Pt[]): string[] {
+    const segs: string[] = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const handle = Math.abs(p2.y - p1.y) * k;
+      const dir = p2.y < p1.y ? -1 : 1; // travel direction in y
+      const cp1 = { x: p1.x, y: p1.y + dir * handle };
+      const cp2 = { x: p2.x, y: p2.y - dir * handle };
+      segs.push(
+        `C ${p(cp1.x)} ${p(cp1.y)}, ${p(cp2.x)} ${p(cp2.y)}, ${p(p2.x)} ${p(p2.y)}`
+      );
+    }
+    return segs;
   }
 
-  // Build right-side path segments (foot → lip)
-  const rightSegments: string[] = [];
-  for (let i = 0; i < N - 1; i++) {
-    const [cp1, cp2] = catmullToBez(allPts[i], allPts[i + 1], allPts[i + 2], allPts[i + 3]);
-    rightSegments.push(
-      `C ${p(cp1.x)} ${p(cp1.y)}, ${p(cp2.x)} ${p(cp2.y)}, ${p(allPts[i + 2].x)} ${p(allPts[i + 2].y)}`
-    );
-  }
-
-  const phantomL0: Pt = {
-    x: leftPts[0].x - (leftPts[1].x - leftPts[0].x),
-    y: leftPts[0].y - (leftPts[1].y - leftPts[0].y),
-  };
-  const phantomLN: Pt = {
-    x: leftPts[N - 1].x + (leftPts[N - 1].x - leftPts[N - 2].x),
-    y: leftPts[N - 1].y + (leftPts[N - 1].y - leftPts[N - 2].y),
-  };
-  const allLeftPts: Pt[] = [phantomL0, ...leftPts, phantomLN];
-
-  const leftSegments: string[] = [];
-  for (let i = 0; i < N - 1; i++) {
-    const [cp1, cp2] = catmullToBez(allLeftPts[i], allLeftPts[i + 1], allLeftPts[i + 2], allLeftPts[i + 3]);
-    leftSegments.push(
-      `C ${p(cp1.x)} ${p(cp1.y)}, ${p(cp2.x)} ${p(cp2.y)}, ${p(allLeftPts[i + 2].x)} ${p(allLeftPts[i + 2].y)}`
-    );
-  }
+  const rightSegments = smoothSegments(rightPts); // foot → lip
+  const leftSegments = smoothSegments(leftPts); // lip → foot
 
   // Lip/foot end-cap bulge also flattens as the pot straightens
   const round = 1 - clamp01(edge);
