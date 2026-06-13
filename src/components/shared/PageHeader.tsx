@@ -72,6 +72,7 @@ export default function PageHeader({ user = null, activePath }: PageHeaderProps)
             <Link
               key={link.href}
               href={link.href}
+              aria-current={isActive ? "page" : undefined}
               className="px-3 py-1.5 rounded-lg text-sm transition-colors"
               style={{
                 fontFamily: "var(--font-hand)",

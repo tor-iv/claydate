@@ -42,8 +42,8 @@ html, body {
 }
 
 body {
-  background-color: #F5F0E8;
-  color: #2C1810;
+  background-color: var(--color-clay-cream);
+  color: var(--color-clay-ink);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -114,7 +114,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* ── Wobbly ink ring (selected state) ───────────────────────────────────── */
 .ink-ring {
-  outline: 2.5px solid #2C1810;
+  outline: 2.5px solid var(--color-clay-ink);
   outline-offset: 3px;
   border-radius: 50%;
 }
@@ -123,7 +123,7 @@ h1, h2, h3, h4, h5, h6 {
 .hand-input {
   font-family: var(--font-body);
   background: transparent;
-  color: #2C1810;
+  color: var(--color-clay-ink);
   border: none;
   border-bottom: 2px dashed rgba(44, 24, 16, 0.45);
   border-radius: 0;

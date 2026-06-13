@@ -7,6 +7,7 @@ interface InkButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 export default function InkButton({
   variant = "primary",
+  type = "button",
   className = "",
   children,
   ...rest
@@ -21,6 +22,7 @@ export default function InkButton({
     select-none
     relative
     active:translate-y-[1px] active:shadow-none
+    disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:pointer-events-none
   `;
 
   const variants = {
@@ -52,12 +54,9 @@ export default function InkButton({
 
   return (
     <button
+      type={type}
       {...rest}
       className={`${base} ${variants[variant]} ${className}`}
-      style={{
-        fontFamily: "var(--font-hand)",
-        ...rest.style,
-      }}
     >
       {children}
     </button>

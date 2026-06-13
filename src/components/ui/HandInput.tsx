@@ -1,3 +1,4 @@
+import { useId } from "react";
 import type { InputHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 type BaseProps = {
@@ -22,14 +23,18 @@ export default function HandInput({
   className = "",
   ...rest
 }: HandInputProps) {
+  // useId works in Server Components and is hydration-stable
+  const generatedId = useId();
+  const fieldId = rest.id ?? generatedId;
   return (
     <div className={`flex flex-col gap-1 ${className}`}>
       {label && (
         <label
+          htmlFor={fieldId}
           className="text-sm"
           style={{
             fontFamily: "var(--font-hand)",
-            color: "#5C3D2E",
+            color: "var(--color-clay-ink-muted)",
           }}
         >
           {label}
@@ -38,11 +43,13 @@ export default function HandInput({
       {Tag === "textarea" ? (
         <textarea
           {...(rest as TextareaHTMLAttributes<HTMLTextAreaElement>)}
+          id={fieldId}
           className="hand-input"
         />
       ) : (
         <input
           {...(rest as InputHTMLAttributes<HTMLInputElement>)}
+          id={fieldId}
           className="hand-input"
         />
       )}

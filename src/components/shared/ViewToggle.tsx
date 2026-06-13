@@ -30,6 +30,7 @@ export default function ViewToggle({ active }: ViewToggleProps) {
         href="/calendar"
         className={base}
         style={active === "month" ? activeStyle : inactiveStyle}
+        aria-current={active === "month" ? "page" : undefined}
       >
         Month
       </Link>
@@ -37,6 +38,7 @@ export default function ViewToggle({ active }: ViewToggleProps) {
         href="/calendar/upcoming"
         className={base}
         style={active === "list" ? activeStyle : inactiveStyle}
+        aria-current={active === "list" ? "page" : undefined}
       >
         List
       </Link>

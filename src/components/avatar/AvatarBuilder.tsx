@@ -55,7 +55,7 @@ export default function AvatarBuilder({
         </div>
         <span
           className="text-sm"
-          style={{ fontFamily: "var(--font-hand)", color: "#5C3D2E" }}
+          style={{ fontFamily: "var(--font-hand)", color: "var(--color-clay-ink-muted)" }}
         >
           your clay friend
         </span>
@@ -75,7 +75,7 @@ export default function AvatarBuilder({
               key={s.id}
               type="button"
               onClick={() => setShape(s.id)}
-              title={s.label}
+              aria-label={s.label}
               className="relative flex flex-col items-center gap-1 p-2 rounded-lg transition-transform"
               style={{
                 background: shape === s.id ? "rgba(184,92,42,0.12)" : "rgba(232,213,176,0.3)",
@@ -89,7 +89,7 @@ export default function AvatarBuilder({
               <VaseAvatar shape={s.id} glaze={glaze} pattern={pattern} size={40} />
               <span
                 className="text-xs leading-none"
-                style={{ fontFamily: "var(--font-hand)", color: "#5C3D2E" }}
+                style={{ fontFamily: "var(--font-hand)", color: "var(--color-clay-ink-muted)" }}
               >
                 {s.label}
               </span>
@@ -145,7 +145,7 @@ export default function AvatarBuilder({
               key={p.id}
               type="button"
               onClick={() => setPattern(p.id)}
-              title={p.label}
+              aria-label={p.label}
               className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-transform"
               style={{
                 background: pattern === p.id ? "rgba(184,92,42,0.12)" : "rgba(232,213,176,0.3)",
@@ -158,7 +158,7 @@ export default function AvatarBuilder({
               <VaseAvatar shape={shape} glaze={glaze} pattern={p.id} size={32} />
               <span
                 className="text-xs leading-none"
-                style={{ fontFamily: "var(--font-hand)", color: "#5C3D2E" }}
+                style={{ fontFamily: "var(--font-hand)", color: "var(--color-clay-ink-muted)" }}
               >
                 {p.label}
               </span>
