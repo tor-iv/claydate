@@ -8,7 +8,20 @@ import HandInput from "@/components/ui/HandInput";
 import DoodleIcon from "@/components/ui/DoodleIcon";
 
 interface NewMeetupPageProps {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; date?: string; time?: string }>;
+}
+
+/** Validates "YYYY-MM-DD" — true if format and calendar date are valid. */
+function isValidDateStr(s: string): boolean {
+  if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s)) return false;
+  const [y, mo, d] = s.split("-").map(Number);
+  const dt = new Date(y, mo - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() + 1 === mo && dt.getDate() === d;
+}
+
+/** Validates "HH:MM" 24-hour time. */
+function isValidTimeStr(s: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
 }
 
 export default async function NewMeetupPage({ searchParams }: NewMeetupPageProps) {
@@ -17,7 +30,11 @@ export default async function NewMeetupPage({ searchParams }: NewMeetupPageProps
     redirect("/login");
   }
 
-  const { error } = await searchParams;
+  const { error, date: rawDate, time: rawTime } = await searchParams;
+
+  // Only trust params that pass validation
+  const defaultDate = rawDate && isValidDateStr(rawDate) ? rawDate : undefined;
+  const defaultTime = rawTime && isValidTimeStr(rawTime) ? rawTime : undefined;
 
   return (
     <main className="flex flex-col items-center min-h-screen px-4 py-8 sm:py-12">
@@ -91,6 +108,7 @@ export default async function NewMeetupPage({ searchParams }: NewMeetupPageProps
                 id="meetup-date"
                 name="date"
                 required
+                defaultValue={defaultDate}
                 className="hand-input"
               />
             </div>
@@ -112,6 +130,7 @@ export default async function NewMeetupPage({ searchParams }: NewMeetupPageProps
                 id="meetup-time"
                 name="time"
                 required
+                defaultValue={defaultTime}
                 className="hand-input"
               />
             </div>

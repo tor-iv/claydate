@@ -160,3 +160,133 @@ export function formatTime12h(time: string): string {
   else if (h > 12) h -= 12;
   return `${h}:${m} ${suffix}`;
 }
+
+// ── Week-view utilities ────────────────────────────────────────────────────
+
+/**
+ * Returns the ISO date of the SUNDAY that starts the current NYC week.
+ * Uses pure date-part arithmetic — safe across DST transitions.
+ */
+export function currentWeekParam(): string {
+  const today = todayISO(); // "YYYY-MM-DD" in NYC
+  const [y, mo, d] = today.split("-").map(Number);
+  // Date constructor with three args creates a LOCAL (server) midnight, but we
+  // only need the day-of-week; calling getDay() on a Date built from numeric
+  // parts is equivalent to any calendar arithmetic — we just subtract the DOW.
+  const dt = new Date(y, mo - 1, d);
+  const dow = dt.getDay(); // 0 = Sun
+  const sunDay = d - dow;
+  const sun = new Date(y, mo - 1, sunDay);
+  const sy = sun.getFullYear();
+  const sm = String(sun.getMonth() + 1).padStart(2, "0");
+  const sd = String(sun.getDate()).padStart(2, "0");
+  return `${sy}-${sm}-${sd}`;
+}
+
+/** Returns true if s is a valid ISO date string AND falls on a Sunday. */
+export function isValidWeekParam(s: string): boolean {
+  if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s)) return false;
+  const [y, mo, d] = s.split("-").map(Number);
+  const dt = new Date(y, mo - 1, d);
+  // Verify the date round-trips (catches invalid dates like Feb 30)
+  if (
+    dt.getFullYear() !== y ||
+    dt.getMonth() + 1 !== mo ||
+    dt.getDate() !== d
+  ) {
+    return false;
+  }
+  return dt.getDay() === 0; // must be Sunday
+}
+
+/**
+ * Returns an array of 7 ISO date strings (Sun → Sat) for the week starting
+ * at weekParam. Uses pure date-part arithmetic — safe across DST.
+ */
+export function weekDays(weekParam: string): string[] {
+  const [y, mo, d] = weekParam.split("-").map(Number);
+  const result: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const dt = new Date(y, mo - 1, d + i);
+    const wy = dt.getFullYear();
+    const wm = String(dt.getMonth() + 1).padStart(2, "0");
+    const wd = String(dt.getDate()).padStart(2, "0");
+    result.push(`${wy}-${wm}-${wd}`);
+  }
+  return result;
+}
+
+/** Returns the weekParam for the previous week (7 days before). */
+export function prevWeekParam(weekParam: string): string {
+  const [y, mo, d] = weekParam.split("-").map(Number);
+  const dt = new Date(y, mo - 1, d - 7);
+  const py = dt.getFullYear();
+  const pm = String(dt.getMonth() + 1).padStart(2, "0");
+  const pd = String(dt.getDate()).padStart(2, "0");
+  return `${py}-${pm}-${pd}`;
+}
+
+/** Returns the weekParam for the next week (7 days after). */
+export function nextWeekParam(weekParam: string): string {
+  const [y, mo, d] = weekParam.split("-").map(Number);
+  const dt = new Date(y, mo - 1, d + 7);
+  const ny = dt.getFullYear();
+  const nm = String(dt.getMonth() + 1).padStart(2, "0");
+  const nd = String(dt.getDate()).padStart(2, "0");
+  return `${ny}-${nm}-${nd}`;
+}
+
+/**
+ * Returns a human-friendly label for the week range, e.g.:
+ *   "Jun 14 – 20"  (same month)
+ *   "Jun 28 – Jul 4"  (cross-month)
+ */
+export function weekRangeLabel(weekParam: string): string {
+  const days = weekDays(weekParam);
+  const sun = days[0];
+  const sat = days[6];
+
+  const fmt = (iso: string, showMonth: boolean) => {
+    const [y, mo, d] = iso.split("-").map(Number);
+    const dt = new Date(y, mo - 1, d);
+    if (showMonth) {
+      return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    }
+    return String(dt.getDate());
+  };
+
+  const [sunY, sunM] = sun.split("-").map(Number);
+  const [satY, satM] = sat.split("-").map(Number);
+  const crossMonth = sunM !== satM || sunY !== satY;
+
+  const sunLabel = fmt(sun, true);
+  const satLabel = fmt(sat, crossMonth);
+  return `${sunLabel} – ${satLabel}`;
+}
+
+/**
+ * Returns the current NYC date and minutes-since-midnight.
+ * Used to position the current-time indicator in WeekGrid.
+ */
+export function nowInNY(): { dateISO: string; minutesSinceMidnight: number } {
+  const now = new Date();
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: NYC_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const parts = fmt.formatToParts(now);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "0";
+  const year = get("year");
+  const month = get("month");
+  const day = get("day");
+  const hour = parseInt(get("hour"), 10);
+  const minute = parseInt(get("minute"), 10);
+  const dateISO = `${year}-${month}-${day}`;
+  const minutesSinceMidnight = hour * 60 + minute;
+  return { dateISO, minutesSinceMidnight };
+}

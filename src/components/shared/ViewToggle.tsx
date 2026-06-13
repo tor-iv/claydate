@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 interface ViewToggleProps {
-  active: "month" | "list";
+  active: "month" | "week" | "list";
 }
 
 export default function ViewToggle({ active }: ViewToggleProps) {
@@ -21,27 +21,28 @@ export default function ViewToggle({ active }: ViewToggleProps) {
     border: "1.5px solid rgba(44,24,16,0.35)",
   };
 
+  const views = [
+    { id: "month" as const, label: "Month", href: "/calendar" },
+    { id: "week" as const, label: "Week", href: "/calendar/week" },
+    { id: "list" as const, label: "List", href: "/calendar/upcoming" },
+  ];
+
   return (
     <div
       className="inline-flex rounded-full p-0.5"
       style={{ background: "rgba(232,213,176,0.5)", border: "1.5px solid rgba(44,24,16,0.2)" }}
     >
-      <Link
-        href="/calendar"
-        className={base}
-        style={active === "month" ? activeStyle : inactiveStyle}
-        aria-current={active === "month" ? "page" : undefined}
-      >
-        Month
-      </Link>
-      <Link
-        href="/calendar/upcoming"
-        className={base}
-        style={active === "list" ? activeStyle : inactiveStyle}
-        aria-current={active === "list" ? "page" : undefined}
-      >
-        List
-      </Link>
+      {views.map((v) => (
+        <Link
+          key={v.id}
+          href={v.href}
+          className={base}
+          style={active === v.id ? activeStyle : inactiveStyle}
+          aria-current={active === v.id ? "page" : undefined}
+        >
+          {v.label}
+        </Link>
+      ))}
     </div>
   );
 }

@@ -162,3 +162,27 @@ textarea.hand-input {
   outline: 2px solid var(--color-clay-rust);
   outline-offset: 1px;
 }
+
+/* ── Week grid layout variables ──────────────────────────────────────────── */
+:root {
+  --week-hour-height: 64px;  /* height of one hour slot */
+  --week-col-width: 130px;   /* minimum column width on mobile */
+}
+
+/* On wider screens, columns fill naturally — override with larger min */
+@media (min-width: 640px) {
+  :root {
+    --week-col-width: clamp(130px, calc((100vw - 52px - 4rem) / 7), 220px);
+  }
+}
+
+/* Meetup block hover */
+a[data-meetup-block]:hover {
+  filter: brightness(0.96);
+  box-shadow: 2px 3px 0 rgba(44,24,16,0.2);
+}
+
+a[data-meetup-block]:focus-visible {
+  outline: 2px solid var(--color-clay-rust);
+  outline-offset: 1px;
+}
