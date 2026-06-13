@@ -75,7 +75,7 @@ export async function loginAction(formData: FormData): Promise<void> {
   } else {
     redirect(
       "/login?error=" +
-        encodeURIComponent("that's not the password — ask a friend 🤫")
+        encodeURIComponent("that's not the password — ask a friend")
     );
   }
 
@@ -83,7 +83,7 @@ export async function loginAction(formData: FormData): Promise<void> {
   if (!rawName) {
     redirect(
       "/login?error=" +
-        encodeURIComponent("Name can't be empty — what do your friends call you? 🏺")
+        encodeURIComponent("Name can't be empty — what do your friends call you?")
     );
   }
   if (rawName.length > 50) {

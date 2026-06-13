@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { meetups, gallery_photos, users } from "@/db/schema";
 import { getCurrentUser, canEdit as canEditFn } from "@/lib/session";
 import WobblyCard from "@/components/ui/WobblyCard";
+import DoodleIcon from "@/components/ui/DoodleIcon";
 import PhotoUploader from "@/components/gallery/PhotoUploader";
 import GalleryGrid from "@/components/gallery/GalleryGrid";
 import DeletePhotoButton from "@/components/gallery/DeletePhotoButton";
@@ -100,14 +101,14 @@ export default async function GalleryPage({ params }: GalleryPageProps) {
         {currentUser && userCanEdit && (
           <WobblyCard tone="warm" className="mb-6">
             <h2
-              className="mb-4"
+              className="mb-4 flex items-center gap-1.5"
               style={{
                 fontFamily: "var(--font-hand)",
                 fontSize: "1.2rem",
                 color: "#2C1810",
               }}
             >
-              share a photo 📸
+              share a photo <DoodleIcon name="camera" size={18} color="#2C1810" />
             </h2>
             <PhotoUploader meetupId={id} />
           </WobblyCard>
@@ -116,6 +117,7 @@ export default async function GalleryPage({ params }: GalleryPageProps) {
         {currentUser && !userCanEdit && (
           <WobblyCard className="mb-6">
             <p
+              className="flex items-center gap-1"
               style={{
                 fontFamily: "var(--font-body)",
                 fontSize: "0.92rem",
@@ -123,7 +125,7 @@ export default async function GalleryPage({ params }: GalleryPageProps) {
                 fontStyle: "italic",
               }}
             >
-              friends can upload photos — ask for the password 🤫
+              friends can upload photos — ask for the password <DoodleIcon name="secret" size={16} color="var(--color-clay-ink-muted)" />
             </p>
           </WobblyCard>
         )}

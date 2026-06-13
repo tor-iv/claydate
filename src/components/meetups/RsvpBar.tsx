@@ -3,6 +3,8 @@
 import { useOptimistic, useTransition } from "react";
 import { upsertRsvpAction } from "@/actions/rsvps";
 import UserTag from "@/components/shared/UserTag";
+import DoodleIcon from "@/components/ui/DoodleIcon";
+import type { DoodleName } from "@/components/ui/DoodleIcon";
 
 export type RsvpStatus = "yes" | "no" | "maybe";
 
@@ -56,35 +58,35 @@ function applyOptimistic(
 const BUTTON_CONFIG: {
   status: RsvpStatus;
   label: string;
-  emoji: string;
+  icon: DoodleName;
   selectedBg: string;
   selectedBorder: string;
 }[] = [
   {
     status: "yes",
     label: "going!",
-    emoji: "✨",
+    icon: "sparkle",
     selectedBg: "#7EB5C8",
     selectedBorder: "#2C1810",
   },
   {
     status: "maybe",
     label: "maybe~",
-    emoji: "🔥",
+    icon: "flame",
     selectedBg: "#D4847A",
     selectedBorder: "#2C1810",
   },
   {
     status: "no",
     label: "can't",
-    emoji: "〰",
+    icon: "squiggle",
     selectedBg: "transparent",
     selectedBorder: "#2C1810",
   },
 ];
 
 const GROUP_LABELS: Record<RsvpStatus, string> = {
-  yes: "going ✨",
+  yes: "going",
   maybe: "maybe~",
   no: "can't make it",
 };
@@ -123,7 +125,7 @@ export default function RsvpBar({
       {/* RSVP buttons (friends) or guest note */}
       {canEdit ? (
         <div className="flex flex-wrap gap-2">
-          {BUTTON_CONFIG.map(({ status, label, emoji, selectedBg, selectedBorder }) => {
+          {BUTTON_CONFIG.map(({ status, label, icon, selectedBg, selectedBorder }) => {
             const isSelected = optimistic.myStatus === status;
             return (
               <button
@@ -146,7 +148,7 @@ export default function RsvpBar({
                 }}
                 aria-pressed={isSelected}
               >
-                <span>{emoji}</span>
+                <DoodleIcon name={icon} size={16} color="#2C1810" />
                 {label}
               </button>
             );
@@ -154,6 +156,7 @@ export default function RsvpBar({
         </div>
       ) : (
         <p
+          className="flex items-center gap-1"
           style={{
             fontFamily: "var(--font-body)",
             fontSize: "0.92rem",
@@ -161,7 +164,7 @@ export default function RsvpBar({
             fontStyle: "italic",
           }}
         >
-          friends can RSVP — ask for the password 🤫
+          friends can RSVP — ask for the password <DoodleIcon name="secret" size={15} color="var(--color-clay-ink-muted)" />
         </p>
       )}
 
@@ -193,17 +196,19 @@ export default function RsvpBar({
               </p>
               {users.length === 0 ? (
                 <p
-                  className="text-sm italic"
+                  className="text-sm italic flex items-center gap-1"
                   style={{
                     fontFamily: "var(--font-body)",
                     color: "rgba(92,61,46,0.45)",
                   }}
                 >
-                  {status === "yes"
-                    ? "no one yet — be first! 🏺"
-                    : status === "maybe"
-                      ? "no maybes yet"
-                      : "no one said no yet 🎉"}
+                  {status === "yes" ? (
+                    <>no one yet — be first! <DoodleIcon name="amphora" size={14} color="rgba(92,61,46,0.45)" /></>
+                  ) : status === "maybe" ? (
+                    "no maybes yet"
+                  ) : (
+                    <>no one said no yet <DoodleIcon name="party" size={14} color="rgba(92,61,46,0.45)" /></>
+                  )}
                 </p>
               ) : (
                 <div className="flex flex-wrap gap-2">

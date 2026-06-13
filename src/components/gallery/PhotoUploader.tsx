@@ -4,6 +4,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import HandInput from "@/components/ui/HandInput";
 import InkButton from "@/components/ui/InkButton";
+import DoodleIcon from "@/components/ui/DoodleIcon";
 
 interface PhotoUploaderProps {
   meetupId: string;
@@ -182,7 +183,7 @@ export default function PhotoUploader({ meetupId }: PhotoUploaderProps) {
         ) : (
           /* Placeholder */
           <>
-            <span style={{ fontSize: "2rem" }} aria-hidden="true">🏺</span>
+            <DoodleIcon name="amphora" size={36} color="#B85C2A" />
             <p
               style={{
                 fontFamily: "var(--font-hand)",
@@ -224,7 +225,7 @@ export default function PhotoUploader({ meetupId }: PhotoUploaderProps) {
       {selectedFile && (
         <HandInput
           label="caption (optional)"
-          placeholder="what did you make? ✨"
+          placeholder="what did you make?"
           value={caption}
           onChange={(e) => setCaption((e.target as HTMLInputElement).value)}
           maxLength={140}
@@ -254,7 +255,7 @@ export default function PhotoUploader({ meetupId }: PhotoUploaderProps) {
             variant="primary"
             disabled={pending}
           >
-            {pending ? "glazing… 🏺" : "add to gallery"}
+            {pending ? "glazing…" : "add to gallery"}
           </InkButton>
           <InkButton
             type="button"

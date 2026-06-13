@@ -237,7 +237,7 @@ export function buildFeed(meetupList: MeetupForIcs[]): string {
     "VERSION:2.0",
     "PRODID:-//claydate//ClayDate//EN",
     "METHOD:PUBLISH",
-    "X-WR-CALNAME:ClayDate 🏺",
+    "X-WR-CALNAME:ClayDate",
     "X-WR-TIMEZONE:America/New_York",
     "CALSCALE:GREGORIAN",
   ].join("\r\n");

@@ -2,6 +2,7 @@ import { addCommentAction } from "@/actions/comments";
 import VaseAvatar from "@/components/avatar/VaseAvatar";
 import HandInput from "@/components/ui/HandInput";
 import InkButton from "@/components/ui/InkButton";
+import DoodleIcon from "@/components/ui/DoodleIcon";
 
 export interface CommentUser {
   name: string;
@@ -32,13 +33,13 @@ export default function CommentThread({ meetupId, comments, canEdit = true }: Co
       <div className="flex flex-col">
         {comments.length === 0 ? (
           <p
-            className="text-base italic py-4"
+            className="text-base italic py-4 flex items-center gap-1"
             style={{
               fontFamily: "var(--font-body)",
               color: "rgba(92,61,46,0.5)",
             }}
           >
-            no chatter yet — say hi! 👋
+            no chatter yet — say hi! <DoodleIcon name="wave" size={18} color="rgba(92,61,46,0.5)" />
           </p>
         ) : (
           comments.map((c, i) => (
@@ -109,7 +110,7 @@ export default function CommentThread({ meetupId, comments, canEdit = true }: Co
             as="textarea"
             name="body"
             label="your comment"
-            placeholder="say something nice ☁️"
+            placeholder="say something nice"
             maxLength={500}
             rows={2}
           />
@@ -121,6 +122,7 @@ export default function CommentThread({ meetupId, comments, canEdit = true }: Co
         </form>
       ) : (
         <p
+          className="flex items-center gap-1"
           style={{
             fontFamily: "var(--font-body)",
             fontSize: "0.92rem",
@@ -128,7 +130,7 @@ export default function CommentThread({ meetupId, comments, canEdit = true }: Co
             fontStyle: "italic",
           }}
         >
-          friends can leave comments — ask for the password 🤫
+          friends can leave comments — ask for the password <DoodleIcon name="secret" size={15} color="var(--color-clay-ink-muted)" />
         </p>
       )}
     </div>

@@ -49,7 +49,7 @@ export default function PageHeader({ user = null }: PageHeaderProps) {
           ClayDate
         </span>
         <span
-          className="hidden sm:inline-block"
+          className="hidden sm:inline-flex items-center gap-0.5"
           style={{
             fontFamily: "var(--font-body)",
             fontSize: "0.8rem",
@@ -58,7 +58,7 @@ export default function PageHeader({ user = null }: PageHeaderProps) {
             marginTop: 2,
           }}
         >
-          pottery dates at slo slo 🏺
+          pottery dates at slo slo <DoodleIcon name="amphora" size={14} color="#7A8C6E" />
         </span>
       </Link>
 
@@ -72,6 +72,7 @@ export default function PageHeader({ user = null }: PageHeaderProps) {
             {/* Guest mode pill — only visible to guests */}
             {!isFriend && (
               <span
+                className="inline-flex items-center gap-1"
                 style={{
                   fontFamily: "var(--font-hand)",
                   fontSize: "0.78rem",
@@ -84,7 +85,7 @@ export default function PageHeader({ user = null }: PageHeaderProps) {
                   whiteSpace: "nowrap",
                 }}
               >
-                👀 guest
+                <DoodleIcon name="eyes" size={14} color="#5C3D2E" /> guest
               </span>
             )}
             <UserTag user={user} />

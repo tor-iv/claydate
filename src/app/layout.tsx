@@ -23,7 +23,7 @@ const patrickHand = Patrick_Hand({
 });
 
 export const metadata: Metadata = {
-  title: "ClayDate 🏺",
+  title: "ClayDate",
   description: "Pottery meetup calendar for friends at Slo Slo Studio, LES NYC",
 };
 

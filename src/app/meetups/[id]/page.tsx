@@ -163,16 +163,7 @@ export default async function MeetupDetailPage({ params }: MeetupDetailPageProps
           <div className="flex flex-col gap-4">
             {/* Date + time */}
             <div className="flex items-start gap-3">
-              <span
-                style={{
-                  fontFamily: "var(--font-hand)",
-                  fontSize: "1.5rem",
-                  lineHeight: 1,
-                }}
-                aria-hidden="true"
-              >
-                📅
-              </span>
+              <DoodleIcon name="calendar" size={24} color="#B85C2A" />
               <div>
                 <p
                   style={{
@@ -311,14 +302,14 @@ export default async function MeetupDetailPage({ params }: MeetupDetailPageProps
         {/* Comments section */}
         <WobblyCard>
           <h2
-            className="mb-4"
+            className="mb-4 flex items-center gap-1.5"
             style={{
               fontFamily: "var(--font-hand)",
               fontSize: "1.3rem",
               color: "#2C1810",
             }}
           >
-            chatter 💬
+            chatter <DoodleIcon name="chat" size={20} color="#2C1810" />
           </h2>
           <CommentThread meetupId={id} comments={commentEntries} canEdit={userCanEdit} />
         </WobblyCard>
@@ -337,7 +328,7 @@ export default async function MeetupDetailPage({ params }: MeetupDetailPageProps
               textDecoration: "none",
             }}
           >
-            📸 what we made
+            <DoodleIcon name="camera" size={18} color="#2C1810" /> what we made
           </a>
         </div>
       </div>

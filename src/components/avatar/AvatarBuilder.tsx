@@ -24,6 +24,7 @@ import type {
   AvatarPattern,
   FaceId,
 } from "@/lib/avatars";
+import DoodleIcon from "@/components/ui/DoodleIcon";
 
 interface AvatarBuilderProps {
   defaultShape?:   AvatarShape;
@@ -669,7 +670,7 @@ export default function AvatarBuilder({
                 gap: 4,
               }}
             >
-              ✨ surprise me
+              <DoodleIcon name="sparkle" size={14} color="#2C1810" /> surprise me
             </button>
             <button
               type="button"

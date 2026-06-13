@@ -36,7 +36,7 @@ export default async function NewMeetupPage({ searchParams }: NewMeetupPageProps
     return (
       <main className="flex flex-col items-center min-h-screen px-4 py-8 sm:py-12">
         <div className="w-full max-w-md mx-auto my-auto text-center">
-          <p style={{ fontSize: "3rem", marginBottom: "0.5rem" }} aria-hidden="true">🏺</p>
+          <DoodleIcon name="amphora" size={48} color="#B85C2A" />
           <h1
             className="leading-tight mb-3"
             style={{
@@ -58,7 +58,7 @@ export default async function NewMeetupPage({ searchParams }: NewMeetupPageProps
                 marginBottom: "1.25rem",
               }}
             >
-              planning pottery dates is for friends only 🏺{" "}
+              planning pottery dates is for friends only{" "}
               ask for the friends password to unlock this!
             </p>
             <Link
@@ -93,7 +93,7 @@ export default async function NewMeetupPage({ searchParams }: NewMeetupPageProps
         {/* Heading */}
         <div className="text-center mb-6">
           <h1
-            className="leading-tight"
+            className="leading-tight flex items-center justify-center gap-2"
             style={{
               fontFamily: "var(--font-hand)",
               fontSize: "clamp(2rem, 7vw, 2.8rem)",
@@ -101,7 +101,7 @@ export default async function NewMeetupPage({ searchParams }: NewMeetupPageProps
               color: "#B85C2A",
             }}
           >
-            plan a pottery date 🏺
+            plan a pottery date <DoodleIcon name="amphora" size={28} color="#B85C2A" />
           </h1>
           <p
             className="mt-1"
@@ -135,7 +135,7 @@ export default async function NewMeetupPage({ searchParams }: NewMeetupPageProps
 
             {/* Title */}
             <HandInput
-              label="what are you making? ✨"
+              label="what are you making?"
               name="title"
               placeholder="e.g. Sunday wheel-throwing session"
               required
@@ -146,13 +146,13 @@ export default async function NewMeetupPage({ searchParams }: NewMeetupPageProps
             <div className="flex flex-col gap-1">
               <label
                 htmlFor="meetup-date"
-                className="text-sm"
+                className="text-sm flex items-center gap-1"
                 style={{
                   fontFamily: "var(--font-hand)",
                   color: "var(--color-clay-ink-muted)",
                 }}
               >
-                when is it? 📅
+                when is it? <DoodleIcon name="calendar" size={16} color="var(--color-clay-ink-muted)" />
               </label>
               <input
                 type="date"
@@ -174,7 +174,7 @@ export default async function NewMeetupPage({ searchParams }: NewMeetupPageProps
                   color: "var(--color-clay-ink-muted)",
                 }}
               >
-                what time? ⏰
+                what time?
               </label>
               <input
                 type="time"
@@ -188,7 +188,7 @@ export default async function NewMeetupPage({ searchParams }: NewMeetupPageProps
 
             {/* Location */}
             <HandInput
-              label="where? 📍"
+              label="where?"
               name="location"
               defaultValue={DEFAULT_LOCATION}
               placeholder={DEFAULT_LOCATION}
@@ -200,7 +200,7 @@ export default async function NewMeetupPage({ searchParams }: NewMeetupPageProps
               as="textarea"
               label="any notes? (optional)"
               name="note"
-              placeholder="bring your fave apron, we'll have snacks 🍵"
+              placeholder="bring your fave apron, we'll have snacks"
               maxLength={500}
               rows={3}
             />

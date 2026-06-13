@@ -5,6 +5,7 @@
 
 import { googleCalendarUrl } from "@/lib/ics";
 import type { MeetupForIcs } from "@/lib/ics";
+import DoodleIcon from "@/components/ui/DoodleIcon";
 
 interface AddToCalendarProps {
   meetup: MeetupForIcs;
@@ -38,7 +39,7 @@ export default function AddToCalendar({ meetup, feedUrl }: AddToCalendarProps) {
             lineHeight: 1.2,
           }}
         >
-          <span aria-hidden="true">📅</span>
+          <DoodleIcon name="calendar" size={16} color="var(--color-clay-ink)" />
           add to google cal
         </a>
 
@@ -56,7 +57,7 @@ export default function AddToCalendar({ meetup, feedUrl }: AddToCalendarProps) {
             lineHeight: 1.2,
           }}
         >
-          <span aria-hidden="true">🍎</span>
+          <DoodleIcon name="apple" size={16} color="var(--color-clay-ink)" />
           .ics for apple / outlook
         </a>
       </div>
@@ -70,14 +71,14 @@ export default function AddToCalendar({ meetup, feedUrl }: AddToCalendarProps) {
         }}
       >
         <summary
-          className="px-3 py-2 cursor-pointer text-sm select-none"
+          className="px-3 py-2 cursor-pointer text-sm select-none flex items-center gap-1.5"
           style={{
             fontFamily: "var(--font-hand)",
             color: "rgba(92,61,46,0.75)",
             listStyle: "none",
           }}
         >
-          🗓 subscribe to all meetups
+          <DoodleIcon name="calendar" size={15} color="rgba(92,61,46,0.75)" /> subscribe to all meetups
         </summary>
         <div className="px-3 pb-3 pt-1 flex flex-col gap-2">
           <code

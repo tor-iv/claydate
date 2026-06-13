@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import DoodleIcon from "@/components/ui/DoodleIcon";
 import UserTag from "@/components/shared/UserTag";
 import { formatShortEpoch } from "@/lib/dates";
 
@@ -37,7 +38,7 @@ export default function GalleryGrid({
         className="flex flex-col items-center gap-3 py-12"
         style={{ textAlign: "center" }}
       >
-        <span style={{ fontSize: "3rem" }} aria-hidden="true">🏺</span>
+        <DoodleIcon name="amphora" size={48} color="#B85C2A" />
         <p
           style={{
             fontFamily: "var(--font-hand)",

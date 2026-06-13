@@ -26,7 +26,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         {/* Heading above card */}
         <div className="text-center mb-6">
           <h1
-            className="leading-tight"
+            className="leading-tight flex items-center justify-center gap-2"
             style={{
               fontFamily: "var(--font-hand)",
               fontSize: "clamp(2.4rem, 8vw, 3.2rem)",
@@ -34,7 +34,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               color: "#B85C2A",
             }}
           >
-            hi, potter! 🏺
+            hi, potter! <DoodleIcon name="amphora" size={32} color="#B85C2A" />
           </h1>
           <p
             className="mt-1"
@@ -95,19 +95,20 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             <div className="flex flex-col gap-1">
               <label
                 htmlFor="login-passcode"
+                className="flex items-center gap-1"
                 style={{
                   fontFamily: "var(--font-hand)",
                   fontSize: "1.1rem",
                   color: "#2C1810",
                 }}
               >
-                secret password 🤫
+                secret password <DoodleIcon name="secret" size={18} color="#2C1810" />
               </label>
               <HandInput
                 id="login-passcode"
                 name="passcode"
                 type="text"
-                placeholder="secret password 🤫"
+                placeholder="secret password"
                 required
                 autoComplete="off"
                 style={{ fontSize: "1.1rem" }}
