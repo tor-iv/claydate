@@ -21,6 +21,11 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Allow the ICS feed for calendar app subscriptions (no session cookie available)
+  if (pathname.startsWith("/api/feed/")) {
+    return NextResponse.next();
+  }
+
   // Check for session cookie (presence only — validation happens server-side)
   const hasSession = request.cookies.has("claydate-session");
   if (!hasSession) {

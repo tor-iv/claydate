@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import { eq, asc } from "drizzle-orm";
 import { db } from "@/db";
 import { meetups, rsvps, comments, users } from "@/db/schema";
@@ -10,7 +11,9 @@ import RsvpBar from "@/components/meetups/RsvpBar";
 import type { UserInfo } from "@/components/meetups/RsvpBar";
 import CommentThread from "@/components/meetups/CommentThread";
 import type { CommentEntry } from "@/components/meetups/CommentThread";
+import AddToCalendar from "@/components/meetups/AddToCalendar";
 import { formatLongDate, formatTime12h } from "@/lib/dates";
+import { feedToken } from "@/lib/ics";
 
 interface MeetupDetailPageProps {
   params: Promise<{ id: string }>;
@@ -19,6 +22,12 @@ interface MeetupDetailPageProps {
 
 export default async function MeetupDetailPage({ params }: MeetupDetailPageProps) {
   const { id } = await params;
+
+  // Build the feed URL for the subscribe widget
+  const reqHeaders = await headers();
+  const host = reqHeaders.get("host") ?? "localhost:3456";
+  const token = feedToken();
+  const feedUrl = `webcal://${host}/api/feed/${token}`;
 
   // Fetch meetup
   const meetupRows = await db
@@ -244,6 +253,22 @@ export default async function MeetupDetailPage({ params }: MeetupDetailPageProps
               </div>
             )}
           </div>
+        </WobblyCard>
+
+        {/* Add to calendar */}
+        <WobblyCard className="mb-6">
+          <AddToCalendar
+            meetup={{
+              id: meetup.id,
+              title: meetup.title,
+              location: meetup.location,
+              date: meetup.date,
+              time: meetup.time,
+              note: meetup.note ?? null,
+              created_at: meetup.created_at,
+            }}
+            feedUrl={feedUrl}
+          />
         </WobblyCard>
 
         {/* RSVP section */}
