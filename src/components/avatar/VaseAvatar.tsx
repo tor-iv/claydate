@@ -1,6 +1,12 @@
 import { useId } from "react";
-import { getShape, getGlaze, getPattern } from "@/lib/avatars";
-import type { AvatarShape, AvatarGlaze, AvatarPattern } from "@/lib/avatars";
+import {
+  getShape,
+  getGlaze,
+  getPattern,
+  parseShape,
+  buildThrownPath,
+} from "@/lib/avatars";
+import type { AvatarShape, AvatarGlaze, AvatarPattern, FaceId, ThrownParams } from "@/lib/avatars";
 
 interface VaseAvatarProps {
   shape?: AvatarShape | string;
@@ -34,6 +40,147 @@ function lightenFill(hex: string, amount = 0.4): string {
   return `rgb(${nr},${ng},${nb})`;
 }
 
+/**
+ * Render a face onto the vase at the given position.
+ * cx/cy = center of face area; scale = size factor.
+ */
+function FaceOverlay({
+  face,
+  cx,
+  cy,
+  scale,
+}: {
+  face: FaceId;
+  cx: number;
+  cy: number;
+  scale: number;
+}) {
+  if (face === "none") return null;
+
+  const ink = "#2C1810";
+  const blushColor = "rgba(212,132,122,0.55)";
+  const s = scale; // shorthand
+
+  switch (face) {
+    case "happy":
+      return (
+        <g>
+          {/* Eyes: two filled dots */}
+          <circle cx={cx - 3.5 * s} cy={cy - 1 * s} r={1.1 * s} fill={ink} />
+          <circle cx={cx + 3.5 * s} cy={cy - 1 * s} r={1.1 * s} fill={ink} />
+          {/* Smile: small arc */}
+          <path
+            d={`M ${cx - 3 * s} ${cy + 2.5 * s} Q ${cx} ${cy + 5.5 * s} ${cx + 3 * s} ${cy + 2.5 * s}`}
+            stroke={ink}
+            strokeWidth={1.1 * s}
+            fill="none"
+            strokeLinecap="round"
+          />
+          {/* Blush circles */}
+          <ellipse cx={cx - 5 * s} cy={cy + 2 * s} rx={2.2 * s} ry={1.4 * s} fill={blushColor} />
+          <ellipse cx={cx + 5 * s} cy={cy + 2 * s} rx={2.2 * s} ry={1.4 * s} fill={blushColor} />
+        </g>
+      );
+
+    case "sleepy":
+      return (
+        <g>
+          {/* Half-closed eyes: arcs */}
+          <path
+            d={`M ${cx - 5 * s} ${cy - 0.5 * s} Q ${cx - 3.5 * s} ${cy - 2.5 * s} ${cx - 2 * s} ${cy - 0.5 * s}`}
+            stroke={ink}
+            strokeWidth={1.1 * s}
+            fill="none"
+            strokeLinecap="round"
+          />
+          <path
+            d={`M ${cx + 2 * s} ${cy - 0.5 * s} Q ${cx + 3.5 * s} ${cy - 2.5 * s} ${cx + 5 * s} ${cy - 0.5 * s}`}
+            stroke={ink}
+            strokeWidth={1.1 * s}
+            fill="none"
+            strokeLinecap="round"
+          />
+          {/* Zzz dots */}
+          <circle cx={cx + 5.8 * s} cy={cy - 3 * s} r={0.7 * s} fill={ink} fillOpacity="0.6" />
+          <circle cx={cx + 7.2 * s} cy={cy - 4.5 * s} r={0.5 * s} fill={ink} fillOpacity="0.4" />
+          {/* Gentle smile */}
+          <path
+            d={`M ${cx - 2.5 * s} ${cy + 3 * s} Q ${cx} ${cy + 5 * s} ${cx + 2.5 * s} ${cy + 3 * s}`}
+            stroke={ink}
+            strokeWidth={1 * s}
+            fill="none"
+            strokeLinecap="round"
+          />
+        </g>
+      );
+
+    case "winky":
+      return (
+        <g>
+          {/* Left eye: filled dot */}
+          <circle cx={cx - 3.5 * s} cy={cy - 1 * s} r={1.1 * s} fill={ink} />
+          {/* Right eye: wink arc */}
+          <path
+            d={`M ${cx + 2 * s} ${cy - 1 * s} Q ${cx + 3.5 * s} ${cy - 3 * s} ${cx + 5 * s} ${cy - 1 * s}`}
+            stroke={ink}
+            strokeWidth={1.1 * s}
+            fill="none"
+            strokeLinecap="round"
+          />
+          {/* Wide grin */}
+          <path
+            d={`M ${cx - 3.5 * s} ${cy + 2 * s} Q ${cx} ${cy + 6 * s} ${cx + 3.5 * s} ${cy + 2 * s}`}
+            stroke={ink}
+            strokeWidth={1.1 * s}
+            fill="none"
+            strokeLinecap="round"
+          />
+          {/* One blush */}
+          <ellipse cx={cx + 5.5 * s} cy={cy + 2.5 * s} rx={2 * s} ry={1.3 * s} fill={blushColor} />
+        </g>
+      );
+
+    case "surprised":
+      return (
+        <g>
+          {/* Wide round eyes */}
+          <circle cx={cx - 3.5 * s} cy={cy - 1.5 * s} r={1.7 * s} fill={ink} />
+          <circle cx={cx + 3.5 * s} cy={cy - 1.5 * s} r={1.7 * s} fill={ink} />
+          {/* Tiny white shine dots */}
+          <circle cx={cx - 4 * s} cy={cy - 2 * s} r={0.6 * s} fill="white" />
+          <circle cx={cx + 3 * s} cy={cy - 2 * s} r={0.6 * s} fill="white" />
+          {/* Open-O mouth */}
+          <ellipse cx={cx} cy={cy + 3.5 * s} rx={2 * s} ry={2.5 * s} fill={ink} />
+          <ellipse cx={cx} cy={cy + 3.5 * s} rx={1.2 * s} ry={1.7 * s} fill={lightenFill("#B85C2A", 0.6)} />
+        </g>
+      );
+
+    default:
+      return null;
+  }
+}
+
+/** Compute face center position relative to the vase shape */
+function getFacePosition(
+  kind: "preset" | "thrown",
+  path: string,
+  thrownParams?: ThrownParams
+): { cx: number; cy: number; scale: number } {
+  if (kind === "thrown" && thrownParams) {
+    const { h, b } = thrownParams;
+    // topY = 4 + (1 - h) * 14
+    const topY = 4 + (1 - h) * 14;
+    const bottomY = 60;
+    // Face at ~55% of height (upper body / chest area)
+    const faceY = topY + (bottomY - topY) * 0.52;
+    // Scale based on belly width
+    const scale = 0.55 + b * 0.35;
+    return { cx: 32, cy: faceY, scale };
+  }
+  // For preset shapes: center vertically around 57% of viewBox height, centered X
+  return { cx: 32, cy: 36, scale: 0.9 };
+}
+
 export default function VaseAvatar({
   shape: shapeProp,
   glaze: glazeProp,
@@ -41,9 +188,20 @@ export default function VaseAvatar({
   size = 32,
   className,
 }: VaseAvatarProps) {
-  const shapeData  = getShape(shapeProp  ?? "round-belly");
+  // Parse shape
+  const parsed = parseShape(shapeProp ?? "round-belly");
+  const isThrownShape = parsed.kind === "thrown";
+
+  // Resolve the SVG path
+  const vasePath = isThrownShape
+    ? buildThrownPath(parsed.params)
+    : getShape(parsed.id).path;
+
   const glazeData  = getGlaze(glazeProp  ?? "terracotta");
   const patternId  = (patternProp ?? "plain") as AvatarPattern;
+
+  // Face only exists on thrown vases
+  const face: FaceId = isThrownShape ? parsed.face : "none";
 
   // useId guarantees document-unique, SSR/hydration-stable ids even when the
   // same shape/glaze/pattern combo renders multiple times on one page.
@@ -110,6 +268,16 @@ export default function VaseAvatar({
     }
   }
 
+  // Face position
+  const { cx: faceCx, cy: faceCy, scale: faceScale } = getFacePosition(
+    parsed.kind,
+    vasePath,
+    isThrownShape ? parsed.params : undefined
+  );
+
+  // Scale the face rendering (faces are designed at scale=1 for ~64px, so adjust)
+  const faceSizeScale = (size / 64) * faceScale;
+
   return (
     <svg
       width={size}
@@ -122,14 +290,14 @@ export default function VaseAvatar({
     >
       <defs>
         <clipPath id={clipId}>
-          <path d={shapeData.path} />
+          <path d={vasePath} />
         </clipPath>
         {renderPatternDef()}
       </defs>
 
       {/* Vase fill */}
       <path
-        d={shapeData.path}
+        d={vasePath}
         fill={fill}
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -147,9 +315,19 @@ export default function VaseAvatar({
         />
       )}
 
+      {/* Face overlay (only for thrown vases with a face) */}
+      {face !== "none" && (
+        <FaceOverlay
+          face={face}
+          cx={faceCx}
+          cy={faceCy}
+          scale={faceSizeScale}
+        />
+      )}
+
       {/* Ink outline – hand-drawn feel with slight dasharray */}
       <path
-        d={shapeData.path}
+        d={vasePath}
         fill="none"
         stroke={ink}
         strokeWidth={size < 40 ? 1.8 : 2.2}
@@ -159,7 +337,7 @@ export default function VaseAvatar({
 
       {/* Subtle glaze highlight */}
       <path
-        d={shapeData.path}
+        d={vasePath}
         fill="none"
         stroke={lightenFill(fill, 0.6)}
         strokeWidth={size < 40 ? 1 : 1.2}

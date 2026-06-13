@@ -1,14 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import VaseAvatar from "./VaseAvatar";
 import {
   AVATAR_SHAPES,
   AVATAR_GLAZES,
   AVATAR_PATTERNS,
+  AVATAR_FACES,
   DEFAULT_AVATAR,
+  DEFAULT_THROWN_PARAMS,
+  encodeThrownShape,
+  buildThrownPath,
 } from "@/lib/avatars";
-import type { AvatarShape, AvatarGlaze, AvatarPattern } from "@/lib/avatars";
+import type {
+  AvatarShape,
+  AvatarGlaze,
+  AvatarPattern,
+  FaceId,
+  ThrownParams,
+} from "@/lib/avatars";
 
 interface AvatarBuilderProps {
   defaultShape?:   AvatarShape;
@@ -18,87 +28,616 @@ interface AvatarBuilderProps {
   formMode?: boolean;
 }
 
+// ── Wheel shimmer animation keyframes (component-scoped) ──────────────────
+const WHEEL_STYLE = `
+@keyframes wheelSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes highlightSweep {
+  0%   { stroke-dashoffset: 0;   opacity: 0.7; }
+  50%  { stroke-dashoffset: -40; opacity: 0.4; }
+  100% { stroke-dashoffset: -80; opacity: 0.7; }
+}
+@keyframes highlightSweep2 {
+  0%   { stroke-dashoffset: -20; opacity: 0.5; }
+  50%  { stroke-dashoffset: -60; opacity: 0.2; }
+  100% { stroke-dashoffset: -100; opacity: 0.5; }
+}
+@keyframes zoneHintFade {
+  0%   { opacity: 0; }
+  20%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes wheelGlow {
+  0%   { opacity: 0.4; }
+  50%  { opacity: 0.7; }
+  100% { opacity: 0.4; }
+}
+`;
+
+// Zone definitions for drag interaction (fraction of vase height)
+// Zones map to which params get nudged
+type DragZone = "lip" | "belly" | "foot" | null;
+
+function getDragZone(relY: number): DragZone {
+  // relY = 0 (top) to 1 (bottom)
+  if (relY < 0.3)  return "lip";
+  if (relY < 0.65) return "belly";
+  return "foot";
+}
+
+// Slightly randomize params for "surprise me"
+function randomParams(): ThrownParams {
+  return {
+    h: 0.25 + Math.random() * 0.75,
+    b: 0.2  + Math.random() * 0.8,
+    n: 0.1  + Math.random() * 0.7,
+    l: 0.05 + Math.random() * 0.65,
+    f: 0.15 + Math.random() * 0.7,
+  };
+}
+
+// ── WheelVasePreview ──────────────────────────────────────────────────────
+// The big pottery-wheel sculpting area.
+
+interface WheelVasePreviewProps {
+  params: ThrownParams;
+  glaze: AvatarGlaze;
+  pattern: AvatarPattern;
+  face: FaceId;
+  onParamsChange: (p: ThrownParams) => void;
+}
+
+function WheelVasePreview({
+  params,
+  glaze,
+  pattern,
+  face,
+  onParamsChange,
+}: WheelVasePreviewProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    startParams: ThrownParams;
+    zone: DragZone;
+  }>({
+    active: false,
+    startX: 0,
+    startY: 0,
+    startParams: params,
+    zone: null,
+  });
+  const [hoveredZone, setHoveredZone] = useState<DragZone>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Size of preview in px
+  const PREVIEW_SIZE = 180;
+
+  // Convert pointer event to relative vase coords
+  function getRelativePos(e: PointerEvent | React.PointerEvent): {
+    relX: number;
+    relY: number;
+  } {
+    if (!containerRef.current) return { relX: 0.5, relY: 0.5 };
+    const rect = containerRef.current.getBoundingClientRect();
+    const relX = (e.clientX - rect.left) / rect.width;
+    const relY = (e.clientY - rect.top) / rect.height;
+    return { relX, relY };
+  }
+
+  function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    const el = containerRef.current;
+    if (!el) return;
+    el.setPointerCapture(e.pointerId);
+
+    const { relY } = getRelativePos(e);
+    const zone = getDragZone(relY);
+
+    dragRef.current = {
+      active: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      startParams: { ...params },
+      zone,
+    };
+    setIsDragging(true);
+  }
+
+  function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragRef.current.active) {
+      // Update hover zone
+      const { relY } = getRelativePos(e);
+      setHoveredZone(getDragZone(relY));
+      return;
+    }
+
+    e.preventDefault();
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    const sp = dragRef.current.startParams;
+
+    // Sensitivity: pixels to [0,1] range
+    const hSens = 1 / PREVIEW_SIZE;
+    const vSens = 1 / PREVIEW_SIZE;
+
+    // Vertical drag (anywhere) always adjusts height
+    const hDelta = -dy * vSens * 1.4; // pull up = taller
+
+    const newParams = { ...sp };
+
+    // Height from vertical drag
+    newParams.h = Math.max(0, Math.min(1, sp.h + hDelta));
+
+    // Horizontal drag adjusts zone-specific param
+    const horzDelta = dx * hSens * 1.6;
+
+    switch (dragRef.current.zone) {
+      case "lip":
+        // Horizontal → neck width; also some lip
+        newParams.n = Math.max(0, Math.min(1, sp.n + horzDelta));
+        newParams.l = Math.max(0, Math.min(1, sp.l + horzDelta * 0.6));
+        break;
+      case "belly":
+        // Horizontal → belly width
+        newParams.b = Math.max(0, Math.min(1, sp.b + horzDelta));
+        break;
+      case "foot":
+        // Horizontal → foot width
+        newParams.f = Math.max(0, Math.min(1, sp.f + horzDelta));
+        break;
+    }
+
+    onParamsChange(newParams);
+  }
+
+  function handlePointerUp() {
+    dragRef.current.active = false;
+    setIsDragging(false);
+  }
+
+  function handlePointerLeave() {
+    setHoveredZone(null);
+    if (!dragRef.current.active) {
+      setIsDragging(false);
+    }
+  }
+
+  // Zone hint labels
+  const zoneHints: { zone: DragZone; label: string; topFrac: number }[] = [
+    { zone: "lip",   label: "← pull rim →",  topFrac: 0.12 },
+    { zone: "belly", label: "← shape belly →", topFrac: 0.47 },
+    { zone: "foot",  label: "← widen foot →",  topFrac: 0.82 },
+  ];
+
+  return (
+    <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 0 }}>
+      {/* The pottery-wheel assembly */}
+      <div
+        ref={containerRef}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
+        style={{
+          width: PREVIEW_SIZE,
+          height: PREVIEW_SIZE,
+          cursor: isDragging ? "grabbing" : "grab",
+          touchAction: "none",
+          userSelect: "none",
+          position: "relative",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+        role="img"
+        aria-label="Drag to sculpt your vase"
+      >
+        {/* Zone hint overlays */}
+        {!isDragging && zoneHints.map(({ zone, label, topFrac }) => (
+          <div
+            key={zone}
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: `${topFrac * 100}%`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              pointerEvents: "none",
+              opacity: hoveredZone === zone ? 1 : 0,
+              transition: "opacity 0.18s ease",
+              zIndex: 10,
+            }}
+          >
+            <span
+              style={{
+                fontFamily: "var(--font-hand)",
+                fontSize: "0.72rem",
+                color: "#B85C2A",
+                background: "rgba(245,240,232,0.88)",
+                border: "1px dashed #B85C2A",
+                borderRadius: 4,
+                padding: "1px 6px",
+                whiteSpace: "nowrap",
+                letterSpacing: "0.01em",
+              }}
+            >
+              {label}
+            </span>
+          </div>
+        ))}
+
+        {/* Vase avatar — stays still, symmetry implies the spinning */}
+        <div style={{ position: "relative", zIndex: 2 }}>
+          <VaseAvatar
+            shape={encodeThrownShape(params, face)}
+            glaze={glaze}
+            pattern={pattern}
+            size={PREVIEW_SIZE - 20}
+          />
+          {/* Animated highlight streaks (CSS-only, no viewBox mutation) */}
+          <svg
+            style={{
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+              zIndex: 3,
+            }}
+            width={PREVIEW_SIZE - 20}
+            height={PREVIEW_SIZE - 20}
+            viewBox="0 0 64 64"
+            fill="none"
+          >
+            <path
+              d={buildThrownPath(params)}
+              fill="none"
+              stroke="rgba(255,255,255,0.55)"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeDasharray="8 52"
+              strokeDashoffset="0"
+              style={{
+                animation: "highlightSweep 2.1s linear infinite",
+              }}
+            />
+            <path
+              d={buildThrownPath(params)}
+              fill="none"
+              stroke="rgba(255,255,255,0.3)"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeDasharray="5 60"
+              strokeDashoffset="-20"
+              style={{
+                animation: "highlightSweep2 3.3s linear infinite",
+              }}
+            />
+          </svg>
+        </div>
+      </div>
+
+      {/* Wheel base (spinning) */}
+      <div style={{ position: "relative", marginTop: -8, zIndex: 1 }}>
+        <svg
+          width={PREVIEW_SIZE + 20}
+          height={40}
+          viewBox="0 0 200 40"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          {/* Wheel shadow */}
+          <ellipse
+            cx="100"
+            cy="32"
+            rx="85"
+            ry="7"
+            fill="rgba(44,24,16,0.12)"
+          />
+          {/* Wheel body */}
+          <ellipse cx="100" cy="22" rx="78" ry="14" fill="#5C3D2E" />
+          <ellipse cx="100" cy="18" rx="78" ry="12" fill="#7A5540" />
+
+          {/* Spinning lines on wheel surface */}
+          <g style={{ transformOrigin: "100px 18px", animation: "wheelSpin 3s linear infinite" }}>
+            {[0, 45, 90, 135].map((angle) => (
+              <line
+                key={angle}
+                x1="100"
+                y1="18"
+                x2={100 + Math.cos((angle * Math.PI) / 180) * 68}
+                y2={18 + Math.sin((angle * Math.PI) / 180) * 10}
+                stroke="rgba(255,255,255,0.12)"
+                strokeWidth="1"
+              />
+            ))}
+            {/* Concentric rings on the wheel */}
+            <ellipse cx="100" cy="18" rx="30" ry="5" stroke="rgba(255,255,255,0.1)" strokeWidth="1" fill="none" />
+            <ellipse cx="100" cy="18" rx="55" ry="9" stroke="rgba(255,255,255,0.07)" strokeWidth="1" fill="none" />
+          </g>
+
+          {/* Wheel rim highlight */}
+          <ellipse cx="100" cy="15" rx="78" ry="12" fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="1.5" />
+
+          {/* Glowing center */}
+          <ellipse
+            cx="100"
+            cy="18"
+            rx="8"
+            ry="3"
+            fill="rgba(255,255,255,0.18)"
+            style={{ animation: "wheelGlow 2s ease-in-out infinite" }}
+          />
+
+          {/* Wheel shaft */}
+          <rect x="94" y="30" width="12" height="8" rx="2" fill="#3C2518" />
+        </svg>
+      </div>
+
+      {/* Drag hint text */}
+      <p
+        style={{
+          fontFamily: "var(--font-hand)",
+          fontSize: "0.8rem",
+          color: "var(--color-clay-ink-muted)",
+          marginTop: 6,
+          textAlign: "center",
+          opacity: isDragging ? 0.4 : 0.85,
+          transition: "opacity 0.15s",
+        }}
+      >
+        {isDragging ? "shaping…" : "drag to sculpt your vase"}
+      </p>
+    </div>
+  );
+}
+
+// ── MiniVaseFace ─────────────────────────────────────────────────────────
+// Small chip showing a vase wearing a specific face
+
+function MiniVaseFace({
+  face,
+  glaze,
+  pattern,
+  selected,
+  onClick,
+  label,
+}: {
+  face: FaceId;
+  glaze: AvatarGlaze;
+  pattern: AvatarPattern;
+  selected: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  const shapeStr = encodeThrownShape(DEFAULT_THROWN_PARAMS, face);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      aria-pressed={selected}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 3,
+        padding: "6px 8px",
+        borderRadius: 10,
+        background: selected ? "rgba(184,92,42,0.12)" : "rgba(232,213,176,0.3)",
+        border: selected ? "2px solid #2C1810" : "2px solid transparent",
+        cursor: "pointer",
+        transform: selected ? "scale(1.08)" : "scale(1)",
+        transition: "transform 0.12s ease, border-color 0.12s ease, background 0.12s ease",
+      }}
+    >
+      <VaseAvatar shape={shapeStr} glaze={glaze} pattern={pattern} size={38} />
+      <span
+        style={{
+          fontFamily: "var(--font-hand)",
+          fontSize: "0.7rem",
+          color: "var(--color-clay-ink-muted)",
+          lineHeight: 1,
+        }}
+      >
+        {label}
+      </span>
+    </button>
+  );
+}
+
+// ── AvatarBuilder (main export) ───────────────────────────────────────────
+
 export default function AvatarBuilder({
   defaultShape   = DEFAULT_AVATAR.shape,
   defaultGlaze   = DEFAULT_AVATAR.glaze,
   defaultPattern = DEFAULT_AVATAR.pattern,
   formMode = true,
 }: AvatarBuilderProps) {
-  const [shape,   setShape]   = useState<AvatarShape>(defaultShape);
+  // Mode: "throw" = minigame; "classic" = preset picker (via disclosure)
+  const [mode, setMode] = useState<"throw" | "classic">("throw");
+
+  // Thrown vase state
+  const [params, setParams] = useState<ThrownParams>({ ...DEFAULT_THROWN_PARAMS });
+  const [face, setFace] = useState<FaceId>("happy");
+
+  // Shared state
   const [glaze,   setGlaze]   = useState<AvatarGlaze>(defaultGlaze);
   const [pattern, setPattern] = useState<AvatarPattern>(defaultPattern);
 
+  // Classic preset state
+  const [classicShape, setClassicShape] = useState<string>(defaultShape);
+
+  // Classic disclosure open/closed
+  const [classicOpen, setClassicOpen] = useState(false);
+
+  // The final shape string to emit
+  const shapeValue = mode === "throw"
+    ? encodeThrownShape(params, face)
+    : classicShape;
+
+  function handleSurprise() {
+    setParams(randomParams());
+    const faces: FaceId[] = ["happy", "sleepy", "winky", "surprised", "none"];
+    setFace(faces[Math.floor(Math.random() * faces.length)]);
+  }
+
+  function handleReset() {
+    setParams({ ...DEFAULT_THROWN_PARAMS });
+    setFace("happy");
+  }
+
+  function switchToClassic(id: string) {
+    setClassicShape(id);
+    setMode("classic");
+  }
+
+  function switchToThrow() {
+    setMode("throw");
+  }
+
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
+      <style>{WHEEL_STYLE}</style>
+
       {/* Hidden inputs for form submission */}
       {formMode && (
         <>
-          <input type="hidden" name="avatarShape"   value={shape} />
+          <input type="hidden" name="avatarShape"   value={shapeValue} />
           <input type="hidden" name="avatarGlaze"   value={glaze} />
           <input type="hidden" name="avatarPattern" value={pattern} />
         </>
       )}
 
-      {/* Live preview */}
-      <div className="flex flex-col items-center gap-2">
-        <div
-          className="relative p-4 rounded-full"
-          style={{ background: "rgba(232,213,176,0.4)" }}
-        >
-          <div
-            className="animate-pop-in"
-            key={`${shape}-${glaze}-${pattern}`}
-            style={{ display: "block" }}
-          >
-            <VaseAvatar shape={shape} glaze={glaze} pattern={pattern} size={96} />
-          </div>
-        </div>
-        <span
-          className="text-sm"
-          style={{ fontFamily: "var(--font-hand)", color: "var(--color-clay-ink-muted)" }}
-        >
-          your clay friend
-        </span>
-      </div>
+      {/* ── Pottery Wheel (throw mode) ─────────────────────────────────── */}
+      {mode === "throw" && (
+        <div className="flex flex-col items-center gap-3">
+          <WheelVasePreview
+            params={params}
+            glaze={glaze}
+            pattern={pattern}
+            face={face}
+            onParamsChange={setParams}
+          />
 
-      {/* Shape picker */}
-      <section>
-        <h4
-          className="text-sm mb-2 tracking-wide"
-          style={{ fontFamily: "var(--font-hand)", color: "#2C1810" }}
-        >
-          Shape
-        </h4>
-        <div className="flex flex-wrap gap-2">
-          {AVATAR_SHAPES.map((s) => (
+          {/* Action buttons */}
+          <div className="flex gap-2 flex-wrap justify-center">
             <button
-              key={s.id}
               type="button"
-              onClick={() => setShape(s.id)}
-              aria-label={s.label}
-              className="relative flex flex-col items-center gap-1 p-2 rounded-lg transition-transform"
+              onClick={handleSurprise}
               style={{
-                background: shape === s.id ? "rgba(184,92,42,0.12)" : "rgba(232,213,176,0.3)",
-                border: shape === s.id
-                  ? "2px solid #2C1810"
-                  : "2px solid transparent",
-                transform: shape === s.id ? "scale(1.08)" : "scale(1)",
+                fontFamily: "var(--font-hand)",
+                fontSize: "0.85rem",
+                color: "#2C1810",
+                background: "rgba(212,168,64,0.18)",
+                border: "1.5px solid rgba(44,24,16,0.3)",
+                borderRadius: 8,
+                padding: "4px 12px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              ✨ surprise me
+            </button>
+            <button
+              type="button"
+              onClick={handleReset}
+              style={{
+                fontFamily: "var(--font-hand)",
+                fontSize: "0.85rem",
+                color: "#5C3D2E",
+                background: "rgba(232,213,176,0.4)",
+                border: "1.5px solid rgba(44,24,16,0.2)",
+                borderRadius: 8,
+                padding: "4px 12px",
                 cursor: "pointer",
               }}
             >
-              <VaseAvatar shape={s.id} glaze={glaze} pattern={pattern} size={40} />
-              <span
-                className="text-xs leading-none"
-                style={{ fontFamily: "var(--font-hand)", color: "var(--color-clay-ink-muted)" }}
-              >
-                {s.label}
-              </span>
+              ↺ start over
             </button>
-          ))}
+          </div>
         </div>
-      </section>
+      )}
 
-      {/* Glaze picker */}
+      {/* ── Classic picker (shown when mode=classic) ────────────────────── */}
+      {mode === "classic" && (
+        <div className="flex flex-col items-center gap-3">
+          {/* Preview of selected preset */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 6,
+              padding: "12px 20px",
+              background: "rgba(232,213,176,0.3)",
+              borderRadius: 16,
+            }}
+          >
+            <VaseAvatar shape={classicShape} glaze={glaze} pattern={pattern} size={100} />
+            <span
+              style={{
+                fontFamily: "var(--font-hand)",
+                fontSize: "0.85rem",
+                color: "var(--color-clay-ink-muted)",
+              }}
+            >
+              {AVATAR_SHAPES.find((s) => s.id === classicShape)?.label ?? "Classic"}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={switchToThrow}
+            style={{
+              fontFamily: "var(--font-hand)",
+              fontSize: "0.85rem",
+              color: "#B85C2A",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              textDecoration: "underline",
+              textDecorationStyle: "dotted",
+            }}
+          >
+            ← back to wheel
+          </button>
+        </div>
+      )}
+
+      {/* ── Face picker ─────────────────────────────────────────────────── */}
+      {mode === "throw" && (
+        <section>
+          <h4
+            className="text-sm mb-2"
+            style={{ fontFamily: "var(--font-hand)", color: "#2C1810" }}
+          >
+            Face
+          </h4>
+          <div className="flex flex-wrap gap-2">
+            {AVATAR_FACES.map((f) => (
+              <MiniVaseFace
+                key={f.id}
+                face={f.id}
+                glaze={glaze}
+                pattern={pattern}
+                selected={face === f.id}
+                onClick={() => setFace(f.id)}
+                label={f.label}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── Glaze picker ─────────────────────────────────────────────────── */}
       <section>
         <h4
           className="text-sm mb-2 tracking-wide"
@@ -123,6 +662,7 @@ export default function AvatarBuilder({
                 transform: glaze === g.id ? "scale(1.15)" : "scale(1)",
                 cursor: "pointer",
                 boxShadow: glaze === g.id ? "0 0 0 3px rgba(44,24,16,0.15)" : "none",
+                transition: "transform 0.1s ease, box-shadow 0.1s ease",
               }}
               aria-label={g.label}
               aria-pressed={glaze === g.id}
@@ -131,7 +671,7 @@ export default function AvatarBuilder({
         </div>
       </section>
 
-      {/* Pattern picker */}
+      {/* ── Pattern picker ───────────────────────────────────────────────── */}
       <section>
         <h4
           className="text-sm mb-2 tracking-wide"
@@ -152,10 +692,16 @@ export default function AvatarBuilder({
                 border: pattern === p.id ? "2px solid #2C1810" : "2px solid transparent",
                 transform: pattern === p.id ? "scale(1.08)" : "scale(1)",
                 cursor: "pointer",
+                transition: "transform 0.1s ease",
               }}
               aria-pressed={pattern === p.id}
             >
-              <VaseAvatar shape={shape} glaze={glaze} pattern={p.id} size={32} />
+              <VaseAvatar
+                shape={mode === "throw" ? encodeThrownShape(params, face) : classicShape}
+                glaze={glaze}
+                pattern={p.id}
+                size={32}
+              />
               <span
                 className="text-xs leading-none"
                 style={{ fontFamily: "var(--font-hand)", color: "var(--color-clay-ink-muted)" }}
@@ -165,6 +711,81 @@ export default function AvatarBuilder({
             </button>
           ))}
         </div>
+      </section>
+
+      {/* ── Classic shapes disclosure ─────────────────────────────────────── */}
+      <section>
+        <button
+          type="button"
+          onClick={() => setClassicOpen((v) => !v)}
+          style={{
+            fontFamily: "var(--font-hand)",
+            fontSize: "0.85rem",
+            color: "#5C3D2E",
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            padding: 0,
+            opacity: 0.75,
+          }}
+          aria-expanded={classicOpen}
+        >
+          <span
+            style={{
+              display: "inline-block",
+              transform: classicOpen ? "rotate(90deg)" : "rotate(0deg)",
+              transition: "transform 0.15s ease",
+              fontSize: "0.8rem",
+            }}
+          >
+            ▶
+          </span>
+          classic shapes (no wheel needed)
+        </button>
+
+        {classicOpen && (
+          <div className="flex flex-wrap gap-2 mt-3">
+            {AVATAR_SHAPES.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => switchToClassic(s.id)}
+                aria-label={s.label}
+                className="relative flex flex-col items-center gap-1 p-2 rounded-lg"
+                style={{
+                  background:
+                    mode === "classic" && classicShape === s.id
+                      ? "rgba(184,92,42,0.12)"
+                      : "rgba(232,213,176,0.3)",
+                  border:
+                    mode === "classic" && classicShape === s.id
+                      ? "2px solid #2C1810"
+                      : "2px solid transparent",
+                  transform:
+                    mode === "classic" && classicShape === s.id
+                      ? "scale(1.08)"
+                      : "scale(1)",
+                  cursor: "pointer",
+                  transition: "transform 0.1s ease",
+                }}
+              >
+                <VaseAvatar shape={s.id} glaze={glaze} pattern={pattern} size={40} />
+                <span
+                  className="text-xs leading-none"
+                  style={{
+                    fontFamily: "var(--font-hand)",
+                    color: "var(--color-clay-ink-muted)",
+                  }}
+                >
+                  {s.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );

@@ -2,13 +2,18 @@
 // This file is the canonical contract for all avatar data.
 // Other phases import from here; do not rename exports.
 
-export type AvatarShape =
+// AvatarShape is widened to accept both preset IDs and thrown encodings
+export type PresetShapeId =
   | "round-belly"
   | "tall-slim"
   | "amphora"
   | "squat-wide"
   | "gourd"
   | "flared-rim";
+
+// Widen AvatarShape to accept thrown encodings (string & {}) while keeping
+// preset IDs autocomplete-friendly. tsc-strict-safe.
+export type AvatarShape = PresetShapeId | (string & Record<never, never>);
 
 export type AvatarGlaze =
   | "terracotta"
@@ -36,7 +41,7 @@ export interface Avatar {
 // ── Shapes (64×64 viewBox, hand-drawn feeling silhouettes) ────────────────
 
 export interface AvatarShapeData {
-  id: AvatarShape;
+  id: PresetShapeId;
   label: string;
   /** SVG path in 0 0 64 64 viewBox */
   path: string;
@@ -115,12 +120,259 @@ export const AVATAR_PATTERNS: AvatarPatternData[] = [
   { id: "flowers",  label: "Flowers" },
 ];
 
+// ── Faces ─────────────────────────────────────────────────────────────────
+
+export type FaceId = "none" | "happy" | "sleepy" | "winky" | "surprised";
+
+export interface AvatarFaceData {
+  id: FaceId;
+  label: string;
+}
+
+export const AVATAR_FACES: AvatarFaceData[] = [
+  { id: "none",      label: "No face" },
+  { id: "happy",     label: "Happy" },
+  { id: "sleepy",    label: "Sleepy" },
+  { id: "winky",     label: "Winky" },
+  { id: "surprised", label: "Surprised" },
+];
+
+// ── Thrown vase parameters ────────────────────────────────────────────────
+
+export interface ThrownParams {
+  /** Height factor 0..1 (tall ↔ squat) */
+  h: number;
+  /** Belly width factor 0..1 */
+  b: number;
+  /** Neck width factor 0..1 */
+  n: number;
+  /** Lip flare factor 0..1 */
+  l: number;
+  /** Foot width factor 0..1 */
+  f: number;
+}
+
+// ── Encoding & parsing ────────────────────────────────────────────────────
+
+const VALID_FACE_IDS = new Set<FaceId>(["none", "happy", "sleepy", "winky", "surprised"]);
+const PRESET_IDS = new Set<string>(AVATAR_SHAPES.map((s) => s.id));
+
+function clamp01(v: number): number {
+  return Math.max(0, Math.min(1, v));
+}
+
+/** Encode thrown vase params into a storable shape string. */
+export function encodeThrownShape(params: ThrownParams, face: FaceId): string {
+  const h = clamp01(params.h).toFixed(3);
+  const b = clamp01(params.b).toFixed(3);
+  const n = clamp01(params.n).toFixed(3);
+  const l = clamp01(params.l).toFixed(3);
+  const f = clamp01(params.f).toFixed(3);
+  const faceId: FaceId = VALID_FACE_IDS.has(face) ? face : "none";
+  return `thrown:h=${h},b=${b},n=${n},l=${l},f=${f};face=${faceId}`;
+}
+
+export type ParsedShape =
+  | { kind: "preset"; id: PresetShapeId }
+  | { kind: "thrown"; params: ThrownParams; face: FaceId };
+
+/** Parse an avatar_shape string to either a preset or thrown shape. */
+export function parseShape(shape: string): ParsedShape {
+  // Empty or missing → default preset
+  if (!shape) {
+    return { kind: "preset", id: DEFAULT_AVATAR.shape as PresetShapeId };
+  }
+
+  // Preset ID
+  if (PRESET_IDS.has(shape)) {
+    return { kind: "preset", id: shape as PresetShapeId };
+  }
+
+  // Thrown encoding: thrown:h=0.82,b=0.71,n=0.38,l=0.25,f=0.45;face=happy
+  if (shape.startsWith("thrown:")) {
+    try {
+      const rest = shape.slice("thrown:".length);
+      const [paramsPart, facePart] = rest.split(";");
+
+      if (!paramsPart || !facePart) {
+        return { kind: "preset", id: DEFAULT_AVATAR.shape as PresetShapeId };
+      }
+
+      // Parse params
+      const paramMap: Record<string, number> = {};
+      for (const kv of paramsPart.split(",")) {
+        const [k, v] = kv.split("=");
+        const num = parseFloat(v);
+        if (!k || isNaN(num)) {
+          return { kind: "preset", id: DEFAULT_AVATAR.shape as PresetShapeId };
+        }
+        paramMap[k.trim()] = clamp01(num);
+      }
+
+      const h = paramMap["h"];
+      const b = paramMap["b"];
+      const n = paramMap["n"];
+      const l = paramMap["l"];
+      const f = paramMap["f"];
+
+      if (
+        h === undefined ||
+        b === undefined ||
+        n === undefined ||
+        l === undefined ||
+        f === undefined
+      ) {
+        return { kind: "preset", id: DEFAULT_AVATAR.shape as PresetShapeId };
+      }
+
+      // Parse face
+      const faceMatch = facePart.match(/^face=(.+)$/);
+      const rawFace = faceMatch ? faceMatch[1].trim() : "none";
+      const face: FaceId = VALID_FACE_IDS.has(rawFace as FaceId)
+        ? (rawFace as FaceId)
+        : "none";
+
+      return {
+        kind: "thrown",
+        params: { h, b, n, l, f },
+        face,
+      };
+    } catch {
+      return { kind: "preset", id: DEFAULT_AVATAR.shape as PresetShapeId };
+    }
+  }
+
+  // Unrecognized → default preset
+  return { kind: "preset", id: DEFAULT_AVATAR.shape as PresetShapeId };
+}
+
+/** Re-encode a parsed thrown shape canonically (clamped). Used in auth.ts. */
+export function canonicalizeShape(shape: string): string {
+  const parsed = parseShape(shape);
+  if (parsed.kind === "preset") {
+    return parsed.id;
+  }
+  return encodeThrownShape(parsed.params, parsed.face);
+}
+
+// ── buildThrownPath ───────────────────────────────────────────────────────
+// Generates a smooth symmetric SVG path from the 5 params.
+// 64×64 viewBox; center = x=32.
+// Profile: foot → belly → neck → lip, mirrored, closed.
+
+export function buildThrownPath(params: ThrownParams): string {
+  const { h, b, n, l, f } = {
+    h: clamp01(params.h),
+    b: clamp01(params.b),
+    n: clamp01(params.n),
+    l: clamp01(params.l),
+    f: clamp01(params.f),
+  };
+
+  // Map params to pixel dimensions in 64×64 viewBox
+  // Vertical: top of vase ↔ bottom
+  const topY    = 4 + (1 - h) * 14;      // taller h → lower topY (more height)
+  const bottomY = 60;                      // foot always near bottom
+
+  // Horizontal half-widths (symmetric around x=32)
+  const footHW  = 4  + f * 10;            // 4..14
+  const bellyHW = 10 + b * 18;            // 10..28
+  const neckHW  = 3  + n * 9;             // 3..12
+  const lipHW   = neckHW + l * 8;         // neckHW..neckHW+8
+
+  // Key Y positions
+  const lipY    = topY;
+  const neckY   = topY + (bottomY - topY) * 0.18;
+  const bellyY  = topY + (bottomY - topY) * 0.55;
+  const footY   = bottomY;
+
+  // Right profile points
+  const rLip    = 32 + lipHW;
+  const rNeck   = 32 + neckHW;
+  const rBelly  = 32 + bellyHW;
+  const rFoot   = 32 + footHW;
+
+  // Left profile points
+  const lLip    = 32 - lipHW;
+  const lNeck   = 32 - neckHW;
+  const lBelly  = 32 - bellyHW;
+  const lFoot   = 32 - footHW;
+
+  // Bezier control points for right side (bottom to top)
+  // Foot → belly: curve out
+  const r_fToB_cp1x = rFoot;
+  const r_fToB_cp1y = footY - (footY - bellyY) * 0.3;
+  const r_fToB_cp2x = rBelly;
+  const r_fToB_cp2y = bellyY + (footY - bellyY) * 0.3;
+
+  // Belly → neck: curve in
+  const r_bToN_cp1x = rBelly;
+  const r_bToN_cp1y = bellyY - (bellyY - neckY) * 0.35;
+  const r_bToN_cp2x = rNeck;
+  const r_bToN_cp2y = neckY + (bellyY - neckY) * 0.35;
+
+  // Neck → lip: gentle flare or taper
+  const r_nToL_cp1x = rNeck;
+  const r_nToL_cp1y = neckY - (neckY - lipY) * 0.4;
+  const r_nToL_cp2x = rLip;
+  const r_nToL_cp2y = lipY + (neckY - lipY) * 0.4;
+
+  // Bezier control points for left side (top to bottom, mirrored)
+  const l_nToL_cp1x = lLip;
+  const l_nToL_cp1y = lipY + (neckY - lipY) * 0.4;
+  const l_nToL_cp2x = lNeck;
+  const l_nToL_cp2y = neckY - (neckY - lipY) * 0.4;
+
+  const l_bToN_cp1x = lNeck;
+  const l_bToN_cp1y = neckY + (bellyY - neckY) * 0.35;
+  const l_bToN_cp2x = lBelly;
+  const l_bToN_cp2y = bellyY - (bellyY - neckY) * 0.35;
+
+  const l_fToB_cp1x = lBelly;
+  const l_fToB_cp1y = bellyY + (footY - bellyY) * 0.3;
+  const l_fToB_cp2x = lFoot;
+  const l_fToB_cp2y = footY - (footY - bellyY) * 0.3;
+
+  const p = (n: number) => n.toFixed(2);
+
+  // Start at right foot, go up right side, across lip, down left side, close at foot
+  return [
+    `M ${p(rFoot)} ${p(footY)}`,
+    // Right side: foot → belly
+    `C ${p(r_fToB_cp1x)} ${p(r_fToB_cp1y)}, ${p(r_fToB_cp2x)} ${p(r_fToB_cp2y)}, ${p(rBelly)} ${p(bellyY)}`,
+    // Right side: belly → neck
+    `C ${p(r_bToN_cp1x)} ${p(r_bToN_cp1y)}, ${p(r_bToN_cp2x)} ${p(r_bToN_cp2y)}, ${p(rNeck)} ${p(neckY)}`,
+    // Right side: neck → lip
+    `C ${p(r_nToL_cp1x)} ${p(r_nToL_cp1y)}, ${p(r_nToL_cp2x)} ${p(r_nToL_cp2y)}, ${p(rLip)} ${p(lipY)}`,
+    // Lip across top (slight arc)
+    `Q 32 ${p(lipY - 2)}, ${p(lLip)} ${p(lipY)}`,
+    // Left side: lip → neck
+    `C ${p(l_nToL_cp1x)} ${p(l_nToL_cp1y)}, ${p(l_nToL_cp2x)} ${p(l_nToL_cp2y)}, ${p(lNeck)} ${p(neckY)}`,
+    // Left side: neck → belly
+    `C ${p(l_bToN_cp1x)} ${p(l_bToN_cp1y)}, ${p(l_bToN_cp2x)} ${p(l_bToN_cp2y)}, ${p(lBelly)} ${p(bellyY)}`,
+    // Left side: belly → foot
+    `C ${p(l_fToB_cp1x)} ${p(l_fToB_cp1y)}, ${p(l_fToB_cp2x)} ${p(l_fToB_cp2y)}, ${p(lFoot)} ${p(footY)}`,
+    // Close along foot
+    `Q 32 ${p(footY + 1.5)}, ${p(rFoot)} ${p(footY)}`,
+    "Z",
+  ].join(" ");
+}
+
 // ── Default ───────────────────────────────────────────────────────────────
 
 export const DEFAULT_AVATAR: Avatar = {
   shape: "round-belly",
   glaze: "terracotta",
   pattern: "plain",
+};
+
+// Default thrown params (a pleasant medium vase)
+export const DEFAULT_THROWN_PARAMS: ThrownParams = {
+  h: 0.6,
+  b: 0.55,
+  n: 0.35,
+  l: 0.3,
+  f: 0.35,
 };
 
 // ── Lookup helpers ────────────────────────────────────────────────────────

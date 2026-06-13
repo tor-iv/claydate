@@ -11,13 +11,25 @@ import {
   AVATAR_GLAZES,
   AVATAR_PATTERNS,
   DEFAULT_AVATAR,
+  parseShape,
+  encodeThrownShape,
 } from "@/lib/avatars";
 import type { AvatarShape, AvatarGlaze, AvatarPattern } from "@/lib/avatars";
 
 function validShape(id: string): AvatarShape {
-  return AVATAR_SHAPES.some((s) => s.id === id)
-    ? (id as AvatarShape)
-    : DEFAULT_AVATAR.shape;
+  // Accept preset IDs directly
+  if (AVATAR_SHAPES.some((s) => s.id === id)) {
+    return id as AvatarShape;
+  }
+  // Accept thrown encodings: parse, clamp, re-encode canonically
+  if (id.startsWith("thrown:")) {
+    const parsed = parseShape(id);
+    if (parsed.kind === "thrown") {
+      // Re-encode with clamped values to sanitize client input
+      return encodeThrownShape(parsed.params, parsed.face) as AvatarShape;
+    }
+  }
+  return DEFAULT_AVATAR.shape;
 }
 
 function validGlaze(id: string): AvatarGlaze {

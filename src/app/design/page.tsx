@@ -12,8 +12,12 @@ import {
   AVATAR_SHAPES,
   AVATAR_GLAZES,
   AVATAR_PATTERNS,
+  AVATAR_FACES,
+  encodeThrownShape,
+  DEFAULT_THROWN_PARAMS,
 } from "@/lib/avatars";
 import type { DoodleName } from "@/components/ui/DoodleIcon";
+import type { FaceId } from "@/lib/avatars";
 
 const FAKE_USER = {
   name: "Maya",
@@ -156,13 +160,66 @@ export default function DesignPage() {
           </div>
         </section>
 
-        {/* ── Avatar Builder ───────────────────────────────────────── */}
+        {/* ── Thrown Vase Gallery ──────────────────────────────────── */}
+        <section>
+          <h2
+            className="text-3xl mb-1"
+            style={{ fontFamily: "var(--font-hand)", color: "#2C1810" }}
+          >
+            Thrown Vases × Faces
+          </h2>
+          <p className="text-sm mb-6" style={{ color: "#7A8C6E" }}>
+            Parametric thrown shapes with the 5 face expressions
+          </p>
+          <div className="flex flex-wrap gap-8 items-end">
+            {(["none", "happy", "sleepy", "winky", "surprised"] as FaceId[]).map((faceId) => {
+              // Vary params a bit per face for visual interest
+              const paramVariants: Record<FaceId, typeof DEFAULT_THROWN_PARAMS> = {
+                none:      { h: 0.7, b: 0.6, n: 0.4, l: 0.3, f: 0.35 },
+                happy:     { h: 0.6, b: 0.72, n: 0.35, l: 0.25, f: 0.4 },
+                sleepy:    { h: 0.8, b: 0.45, n: 0.38, l: 0.2, f: 0.3 },
+                winky:     { h: 0.55, b: 0.65, n: 0.5, l: 0.45, f: 0.35 },
+                surprised: { h: 0.75, b: 0.5, n: 0.3, l: 0.15, f: 0.28 },
+              };
+              const faceLabel = AVATAR_FACES.find((f) => f.id === faceId)?.label ?? faceId;
+              const shapeStr = encodeThrownShape(paramVariants[faceId], faceId);
+              return (
+                <div key={faceId} className="flex flex-col items-center gap-2">
+                  <VaseAvatar shape={shapeStr} glaze="terracotta" pattern="plain" size={80} />
+                  <span style={{ fontFamily: "var(--font-hand)", fontSize: "0.85rem", color: "#5C3D2E" }}>
+                    {faceLabel}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          {/* Same faces on different glazes */}
+          <div className="flex flex-wrap gap-6 items-end mt-8">
+            {(["celadon", "cobalt", "honey", "blush-gloss", "midnight"] as const).map((glazeId, i) => {
+              const faceIds: FaceId[] = ["happy", "winky", "sleepy", "surprised", "happy"];
+              const shapeStr = encodeThrownShape(
+                { h: 0.55 + i * 0.08, b: 0.6, n: 0.35 + i * 0.05, l: 0.3, f: 0.38 },
+                faceIds[i]
+              );
+              return (
+                <div key={glazeId} className="flex flex-col items-center gap-2">
+                  <VaseAvatar shape={shapeStr} glaze={glazeId} pattern="dots" size={72} />
+                  <span style={{ fontFamily: "var(--font-hand)", fontSize: "0.8rem", color: "#5C3D2E" }}>
+                    {glazeId}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* ── Avatar Builder (Pottery Wheel Minigame) ──────────────── */}
         <section>
           <h2
             className="text-3xl mb-6"
             style={{ fontFamily: "var(--font-hand)", color: "#2C1810" }}
           >
-            Avatar Builder (live)
+            Avatar Builder — Pottery Wheel
           </h2>
           <WobblyCard className="max-w-md">
             <AvatarBuilder />
