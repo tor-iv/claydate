@@ -7,8 +7,18 @@ claydate.nyc {
 	reverse_proxy app:3000
 }
 
+# Clay Oracle — separate app, its own container on the shared docker network.
+oracle.claydate.nyc {
+	encode gzip
+	reverse_proxy clay-oracle-app:3000
+}
+
 http://claydate.nyc {
 	redir https://claydate.nyc{uri} permanent
+}
+
+http://oracle.claydate.nyc {
+	redir https://oracle.claydate.nyc{uri} permanent
 }
 
 http:// {
