@@ -23,8 +23,6 @@ import type {
   AvatarGlaze,
   AvatarPattern,
   FaceId,
-  ThrownParams,
-  EdgeStyle,
 } from "@/lib/avatars";
 
 interface AvatarBuilderProps {
@@ -81,7 +79,7 @@ interface WheelVasePreviewProps {
   glaze: AvatarGlaze;
   pattern: AvatarPattern;
   face: FaceId;
-  edge: EdgeStyle;
+  edge: number;
   onHeightChange: (h: number) => void;
   onWidthsChange: (widths: number[]) => void;
 }
@@ -118,7 +116,7 @@ function WheelVasePreview({
   const [isDragging, setIsDragging] = useState(false);
 
   // Size of preview in px
-  const PREVIEW_SIZE = 180;
+  const PREVIEW_SIZE = 220;
 
   // Convert pointer event to relative vase coords
   function getRelativePos(e: PointerEvent | React.PointerEvent): {
@@ -566,7 +564,8 @@ export default function AvatarBuilder({
   const [thrown2H, setThrown2H] = useState<number>(DEFAULT_THROWN2_H);
   const [thrown2Widths, setThrown2Widths] = useState<number[]>(DEFAULT_THROWN2_WIDTHS.slice());
   const [face, setFace] = useState<FaceId>("happy");
-  const [edge, setEdge] = useState<EdgeStyle>("round");
+  // edge dial: 0 = pretty round (default) … 1 = fully angular
+  const [edge, setEdge] = useState<number>(0);
 
   // Shared state
   const [glaze,   setGlaze]   = useState<AvatarGlaze>(defaultGlaze);
@@ -604,15 +603,15 @@ export default function AvatarBuilder({
     setThrown2Widths(widths);
     const faces: FaceId[] = ["happy", "sleepy", "winky", "surprised", "none"];
     setFace(faces[Math.floor(Math.random() * faces.length)]);
-    // Randomize edge: ~30% chance of straight
-    setEdge(Math.random() < 0.3 ? "straight" : "round");
+    // Randomize edge: mostly roundish, occasionally fully angular
+    setEdge(Math.random() < 0.35 ? Math.random() : 0);
   }
 
   function handleReset() {
     setThrown2H(DEFAULT_THROWN2_H);
     setThrown2Widths(DEFAULT_THROWN2_WIDTHS.slice());
     setFace("happy");
-    setEdge("round");
+    setEdge(0);
   }
 
   function switchToClassic(id: string) {
@@ -748,51 +747,24 @@ export default function AvatarBuilder({
             >
               Face
             </h4>
-            {/* Edge style toggle */}
-            <div className="flex gap-1" role="group" aria-label="Edge style">
-              <button
-                type="button"
-                onClick={() => setEdge("round")}
-                aria-pressed={edge === "round"}
-                style={{
-                  fontFamily: "var(--font-hand)",
-                  fontSize: "0.78rem",
-                  color: edge === "round" ? "#2C1810" : "#5C3D2E",
-                  background: edge === "round" ? "rgba(184,92,42,0.14)" : "rgba(232,213,176,0.3)",
-                  border: edge === "round" ? "2px solid #2C1810" : "2px solid transparent",
-                  borderRadius: "8px 0 0 8px",
-                  padding: "3px 10px",
-                  cursor: "pointer",
-                  transition: "background 0.12s, border-color 0.12s",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 3,
-                }}
-              >
-                <span aria-hidden="true">◠</span> rounded
-              </button>
-              <button
-                type="button"
-                onClick={() => setEdge("straight")}
-                aria-pressed={edge === "straight"}
-                style={{
-                  fontFamily: "var(--font-hand)",
-                  fontSize: "0.78rem",
-                  color: edge === "straight" ? "#2C1810" : "#5C3D2E",
-                  background: edge === "straight" ? "rgba(184,92,42,0.14)" : "rgba(232,213,176,0.3)",
-                  border: edge === "straight" ? "2px solid #2C1810" : "2px solid transparent",
-                  borderRadius: "0 8px 8px 0",
-                  padding: "3px 10px",
-                  cursor: "pointer",
-                  transition: "background 0.12s, border-color 0.12s",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 3,
-                }}
-              >
-                <span aria-hidden="true">◇</span> angular
-              </button>
-            </div>
+            {/* Edge dial — round ◠ … angular ◇ */}
+            <label
+              className="flex items-center gap-2"
+              style={{ fontFamily: "var(--font-hand)", fontSize: "0.78rem", color: "#5C3D2E" }}
+            >
+              <span aria-hidden="true">◠</span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={edge}
+                onChange={(e) => setEdge(parseFloat(e.target.value))}
+                aria-label="Edge style: rounded to angular"
+                style={{ accentColor: "#B85C2A", width: 92, cursor: "pointer" }}
+              />
+              <span aria-hidden="true">◇</span>
+            </label>
           </div>
           <div className="flex flex-wrap gap-2">
             {AVATAR_FACES.map((f) => (

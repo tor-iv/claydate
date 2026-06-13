@@ -172,12 +172,23 @@ export function encodeThrownShape(params: ThrownParams, face: FaceId): string {
   return `thrown:h=${h},b=${b},n=${n},l=${l},f=${f};face=${faceId}`;
 }
 
+// Edge "straightness" is a continuous dial: 0 = fully round (default),
+// 1 = fully angular/straight. The keywords "round"/"straight" remain accepted
+// on parse for backward compatibility and map to 0 / 1.
 export type EdgeStyle = "round" | "straight";
+
+/** Parse an edge field value ("round", "straight", or a 0..1 number) → 0..1. */
+export function parseEdge(raw: string | undefined): number {
+  if (raw === undefined || raw === "round") return 0;
+  if (raw === "straight") return 1;
+  const num = parseFloat(raw);
+  return isNaN(num) ? 0 : clamp01(num);
+}
 
 export type ParsedShape =
   | { kind: "preset"; id: PresetShapeId }
   | { kind: "thrown"; params: ThrownParams; face: FaceId }
-  | { kind: "thrown2"; h: number; widths: number[]; face: FaceId; edge: EdgeStyle };
+  | { kind: "thrown2"; h: number; widths: number[]; face: FaceId; edge: number };
 
 /** Parse an avatar_shape string to either a preset or thrown shape. */
 export function parseShape(shape: string): ParsedShape {
@@ -286,10 +297,8 @@ export function parseShape(shape: string): ParsedShape {
         ? (rawFace as FaceId)
         : "none";
 
-      // Parse edge style — unknown/missing defaults to "round"
-      const rawEdge = parts["edge"];
-      const edge: EdgeStyle =
-        rawEdge === "straight" ? "straight" : "round";
+      // Parse edge dial — keyword or 0..1 number, missing → 0 (round)
+      const edge = parseEdge(parts["edge"]);
 
       return { kind: "thrown2", h, widths, face, edge };
     } catch {
@@ -317,24 +326,25 @@ export function canonicalizeShape(shape: string): string {
 
 /**
  * How many widen-able bands a given height produces.
- * h=0 → 2 bands, h=1 → 6 bands.
+ * Capped at 4 so vases stay smooth and easy to shape (more bands got spiky).
+ * h=0 → 2 bands, h=0.5 → 3, h=1 → 4.
  */
 export function bandsForHeight(h: number): number {
-  return 2 + Math.round(clamp01(h) * 4);
+  return 2 + Math.round(clamp01(h) * 2);
 }
 
-/** Encode a thrown2 vase to a storable string. Always includes edge field canonically. */
+/** Encode a thrown2 vase to a storable string. edge is a 0..1 dial (0 = round). */
 export function encodeThrown2Shape(
   h: number,
   widths: number[],
   face: FaceId,
-  edge: EdgeStyle = "round"
+  edge: number = 0
 ): string {
   const hStr = clamp01(h).toFixed(3);
   const wStr = widths.map((w) => clamp01(w).toFixed(3)).join(",");
   const faceId: FaceId = VALID_FACE_IDS.has(face) ? face : "none";
-  const edgeVal: EdgeStyle = edge === "straight" ? "straight" : "round";
-  return `thrown2:h=${hStr};w=${wStr};edge=${edgeVal};face=${faceId}`;
+  const edgeStr = clamp01(edge).toFixed(2);
+  return `thrown2:h=${hStr};w=${wStr};edge=${edgeStr};face=${faceId}`;
 }
 
 /**
@@ -357,7 +367,8 @@ export function resampleWidths(widths: number[], targetLen: number): number[] {
 }
 
 /** Default thrown2 widths for a pleasant S-curve at h=0.6 (4 bands with new formula) */
-export const DEFAULT_THROWN2_WIDTHS = [0.35, 0.65, 0.72, 0.38];
+// h=0.6 → 3 bands: narrow foot, round belly, gently flared lip
+export const DEFAULT_THROWN2_WIDTHS = [0.4, 0.72, 0.5];
 export const DEFAULT_THROWN2_H = 0.6;
 
 // ── buildThrownPath ───────────────────────────────────────────────────────
@@ -472,13 +483,13 @@ export function buildThrownPath(params: ThrownParams): string {
 
 /** Compute the actual lip Y for a given h (used by VaseAvatar for face placement). */
 export function thrown2LipY(h: number): number {
-  return 34 - clamp01(h) * 28; // h=0 → 34, h=1 → 6
+  return 35 - clamp01(h) * 29; // h=0 → 35 (squat), h=1 → 6 (nice & tall)
 }
 
-/** Compute the foot Y (constant). */
-export const THROWN2_FOOT_Y = 58;
+/** Compute the foot Y (constant — leaves ~7px bottom margin in the 64 viewBox). */
+export const THROWN2_FOOT_Y = 57;
 
-export function buildThrown2Path(h: number, widths: number[], edge: EdgeStyle = "round"): string {
+export function buildThrown2Path(h: number, widths: number[], edge: number = 0): string {
   const safeH = clamp01(h);
   const p = (n: number) => n.toFixed(2);
 
@@ -497,9 +508,9 @@ export function buildThrown2Path(h: number, widths: number[], edge: EdgeStyle = 
   }
 
   // Compute right-side X positions (half-widths clamped)
-  // min half-width ~3.2 (10% of 32), max ~28 (87.5%)
+  // min half-width ~3.2, max ~26 (+1.5 lip flare = 60.5 → ≥3.5px side margin)
   const MIN_HW = 3.2;
-  const MAX_HW = 28.0;
+  const MAX_HW = 26.0;
   const rightX: number[] = widths.map((w) => {
     const hw = MIN_HW + clamp01(w) * (MAX_HW - MIN_HW);
     return 32 + hw;
@@ -524,64 +535,14 @@ export function buildThrown2Path(h: number, widths: number[], edge: EdgeStyle = 
   const footY = bandY[0];
   const rFoot = rightPts[0].x;
 
-  if (edge === "straight") {
-    // Faceted profile: straight lines between stops with small corner eases (~1.5px).
-    // Pattern: from current position, straight line to (corner - r), then Q through corner to (corner + r in next direction).
-    // This reads as a deliberate angular/carved pot — still cute, never razor-sharp.
-    const r = 1.5;
+  // ── One profile, tension driven by the edge dial ─────────────────────────
+  // edge=0 → α≈0.5 (round, centripetal Catmull-Rom)
+  // edge=1 → α≈0.03 (control points collapse to the stops → near-straight facets)
+  // Anything between is a smoothly straightening pot.
+  const alpha = 0.5 - clamp01(edge) * 0.47;
 
-    /** Build segments for a polyline with rounded corners (skip rounding at first/last points). */
-    function facetedSegments(pts: Pt[]): string[] {
-      const segs: string[] = [];
-      const M = pts.length;
-      for (let i = 0; i < M - 1; i++) {
-        const cur  = pts[i];
-        const next = pts[i + 1];
-        const dx = next.x - cur.x;
-        const dy = next.y - cur.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const ux = dx / dist;
-        const uy = dy / dist;
-
-        if (i === M - 2) {
-          // Last segment: go straight to the end point (no exit rounding needed — lip/foot handle closure)
-          segs.push(`L ${p(next.x)} ${p(next.y)}`);
-        } else {
-          // Go straight to just before the next corner
-          segs.push(`L ${p(next.x - ux * r)} ${p(next.y - uy * r)}`);
-          // Peek at direction to the point after next
-          const nn = pts[i + 2];
-          const dx2 = nn.x - next.x;
-          const dy2 = nn.y - next.y;
-          const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2) || 1;
-          const ux2 = dx2 / dist2;
-          const uy2 = dy2 / dist2;
-          // Round the corner: Q through the corner point, exit r along next direction
-          segs.push(`Q ${p(next.x)} ${p(next.y)}, ${p(next.x + ux2 * r)} ${p(next.y + uy2 * r)}`);
-        }
-      }
-      return segs;
-    }
-
-    const rightSegs = facetedSegments(rightPts);
-    const leftSegs  = facetedSegments(leftPts);
-
-    return [
-      `M ${p(rFoot)} ${p(footY)}`,
-      ...rightSegs,
-      // Lip top — slight flat arc
-      `Q 32 ${p(lipY - 1.5)}, ${p(lipLeftX)} ${p(lipY)}`,
-      ...leftSegs,
-      // Close along foot
-      `Q 32 ${p(footY + 1.5)}, ${p(rFoot)} ${p(footY)}`,
-      "Z",
-    ].join(" ");
-  }
-
-  // ── round: Catmull-Rom → cubic bézier ────────────────────────────────────
-
-  // Catmull-Rom to cubic Bezier conversion for a chain of points
-  // We add phantom endpoints to make the ends feel natural
+  // Catmull-Rom to cubic Bezier conversion for a chain of points.
+  // Phantom endpoints make the ends feel natural.
   const phantom0: Pt = {
     x: rightPts[0].x - (rightPts[1].x - rightPts[0].x),
     y: rightPts[0].y - (rightPts[1].y - rightPts[0].y),
@@ -591,9 +552,6 @@ export function buildThrown2Path(h: number, widths: number[], edge: EdgeStyle = 
     y: rightPts[N - 1].y + (rightPts[N - 1].y - rightPts[N - 2].y),
   };
   const allPts: Pt[] = [phantom0, ...rightPts, phantomN];
-
-  // tension α for Catmull-Rom (0.5 = centripetal)
-  const alpha = 0.5;
 
   function catmullToBez(p0: Pt, p1: Pt, p2: Pt, p3: Pt): [Pt, Pt] {
     const cp1: Pt = {
@@ -634,17 +592,19 @@ export function buildThrown2Path(h: number, widths: number[], edge: EdgeStyle = 
     );
   }
 
+  // Lip/foot end-cap bulge also flattens as the pot straightens
+  const round = 1 - clamp01(edge);
   return [
     // Start at right foot
     `M ${p(rFoot)} ${p(footY)}`,
     // Right side: foot → lip
     ...rightSegments,
-    // Lip top arc
-    `Q 32 ${p(lipY - 2)}, ${p(lipLeftX)} ${p(lipY)}`,
+    // Lip top arc (flat when straight, gently domed when round)
+    `Q 32 ${p(lipY - 2 * round)}, ${p(lipLeftX)} ${p(lipY)}`,
     // Left side: lip → foot
     ...leftSegments,
     // Close along foot
-    `Q 32 ${p(footY + 1.5)}, ${p(rFoot)} ${p(footY)}`,
+    `Q 32 ${p(footY + 1.5 * round)}, ${p(rFoot)} ${p(footY)}`,
     "Z",
   ].join(" ");
 }

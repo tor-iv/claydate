@@ -9,7 +9,7 @@ import {
   thrown2LipY,
   THROWN2_FOOT_Y,
 } from "@/lib/avatars";
-import type { AvatarShape, AvatarGlaze, AvatarPattern, FaceId, ThrownParams, EdgeStyle } from "@/lib/avatars";
+import type { AvatarShape, AvatarGlaze, AvatarPattern, FaceId, ThrownParams } from "@/lib/avatars";
 
 interface VaseAvatarProps {
   shape?: AvatarShape | string;

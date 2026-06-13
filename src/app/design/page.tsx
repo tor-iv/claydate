@@ -20,7 +20,7 @@ import {
   DEFAULT_THROWN_PARAMS,
 } from "@/lib/avatars";
 import type { DoodleName } from "@/components/ui/DoodleIcon";
-import type { FaceId, EdgeStyle } from "@/lib/avatars";
+import type { FaceId } from "@/lib/avatars";
 
 const FAKE_USER = {
   name: "Maya",
@@ -230,13 +230,13 @@ export default function DesignPage() {
           {/* Row: squat 2-band, mid 4-band, tall 6-band, angular example */}
           <div className="flex flex-wrap gap-8 items-end">
             {([
-              { numBands: 2, label: "squat 2-band", face: "happy" as FaceId, edge: "round" as EdgeStyle, glaze: "terracotta" },
-              { numBands: 4, label: "mid 4-band",   face: "winky" as FaceId, edge: "round" as EdgeStyle, glaze: "celadon" },
-              { numBands: 6, label: "tall 6-band",  face: "sleepy" as FaceId, edge: "round" as EdgeStyle, glaze: "cobalt" },
-              { numBands: 4, label: "angular ◇",   face: "surprised" as FaceId, edge: "straight" as EdgeStyle, glaze: "honey" },
+              { numBands: 2, label: "squat 2-band", face: "happy" as FaceId, edge: 0, glaze: "terracotta" },
+              { numBands: 3, label: "mid 3-band",   face: "winky" as FaceId, edge: 0, glaze: "celadon" },
+              { numBands: 4, label: "tall 4-band",  face: "sleepy" as FaceId, edge: 0, glaze: "cobalt" },
+              { numBands: 4, label: "angular ◇",   face: "surprised" as FaceId, edge: 1, glaze: "honey" },
             ]).map(({ numBands, label, face: faceId, edge, glaze: glazeId }) => {
-              // Derive h from bandsForHeight inverse: 2+round(h*4)=n → h=(n-2)/4
-              const h = (numBands - 2) / 4;
+              // Derive h from bandsForHeight inverse: 2+round(h*2)=n → h=(n-2)/2
+              const h = (numBands - 2) / 2;
               // Gentle S-curve widths: foot narrow, belly wide, neck narrow, lip flared
               const sCurveBase = [0.32, 0.5, 0.72, 0.55, 0.35, 0.42];
               const widths = resampleWidths(sCurveBase, numBands);
