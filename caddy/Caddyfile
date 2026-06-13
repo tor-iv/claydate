@@ -1,12 +1,17 @@
-# Caddy gets Let's Encrypt certs for claydate.nyc automatically and
-# redirects HTTP → HTTPS. The :80 fallback answers bare-IP requests with
-# plain HTTP so "is it up" smoke checks work before DNS propagates —
-# real logins need the domain (cookies are secure-only with HTTPS=true).
+# Caddy gets Let's Encrypt certs for claydate.nyc automatically.
+# The explicit http://claydate.nyc redirect guarantees the domain is never
+# served in plaintext; the bare-IP catch-all answers health checks only and
+# never proxies app routes (so credentials can't transit plain HTTP).
 claydate.nyc {
 	encode gzip
 	reverse_proxy app:3000
 }
 
+http://claydate.nyc {
+	redir https://claydate.nyc{uri} permanent
+}
+
 http:// {
-	reverse_proxy app:3000
+	respond /healthz "ok" 200
+	respond "Use https://claydate.nyc" 200
 }
