@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { meetups, rsvps } from "@/db/schema";
 import { getCurrentUser } from "@/lib/session";
