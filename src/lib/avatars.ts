@@ -174,7 +174,8 @@ export function encodeThrownShape(params: ThrownParams, face: FaceId): string {
 
 export type ParsedShape =
   | { kind: "preset"; id: PresetShapeId }
-  | { kind: "thrown"; params: ThrownParams; face: FaceId };
+  | { kind: "thrown"; params: ThrownParams; face: FaceId }
+  | { kind: "thrown2"; h: number; widths: number[]; face: FaceId };
 
 /** Parse an avatar_shape string to either a preset or thrown shape. */
 export function parseShape(shape: string): ParsedShape {
@@ -242,6 +243,52 @@ export function parseShape(shape: string): ParsedShape {
     }
   }
 
+  // thrown2 encoding: thrown2:h=0.85;w=0.45,0.72,0.91,0.66,0.38;face=happy
+  if (shape.startsWith("thrown2:")) {
+    try {
+      const rest = shape.slice("thrown2:".length);
+      // Split on ";" — expect h=..., w=..., face=...
+      const parts: Record<string, string> = {};
+      for (const seg of rest.split(";")) {
+        const eqIdx = seg.indexOf("=");
+        if (eqIdx < 0) return { kind: "preset", id: DEFAULT_AVATAR.shape as PresetShapeId };
+        parts[seg.slice(0, eqIdx).trim()] = seg.slice(eqIdx + 1).trim();
+      }
+
+      if (!parts["h"] || !parts["w"] || !parts["face"]) {
+        return { kind: "preset", id: DEFAULT_AVATAR.shape as PresetShapeId };
+      }
+
+      const h = clamp01(parseFloat(parts["h"]));
+      if (isNaN(h)) return { kind: "preset", id: DEFAULT_AVATAR.shape as PresetShapeId };
+
+      const rawWidths = parts["w"].split(",").map((v) => {
+        const n = parseFloat(v);
+        return isNaN(n) ? null : clamp01(n);
+      });
+      if (rawWidths.some((v) => v === null) || rawWidths.length < 1) {
+        return { kind: "preset", id: DEFAULT_AVATAR.shape as PresetShapeId };
+      }
+      const parsedWidths = rawWidths as number[];
+
+      // Resample to the correct band count for this height
+      const expectedBands = bandsForHeight(h);
+      const widths =
+        parsedWidths.length === expectedBands
+          ? parsedWidths
+          : resampleWidths(parsedWidths, expectedBands);
+
+      const rawFace = parts["face"];
+      const face: FaceId = VALID_FACE_IDS.has(rawFace as FaceId)
+        ? (rawFace as FaceId)
+        : "none";
+
+      return { kind: "thrown2", h, widths, face };
+    } catch {
+      return { kind: "preset", id: DEFAULT_AVATAR.shape as PresetShapeId };
+    }
+  }
+
   // Unrecognized → default preset
   return { kind: "preset", id: DEFAULT_AVATAR.shape as PresetShapeId };
 }
@@ -252,8 +299,56 @@ export function canonicalizeShape(shape: string): string {
   if (parsed.kind === "preset") {
     return parsed.id;
   }
+  if (parsed.kind === "thrown2") {
+    return encodeThrown2Shape(parsed.h, parsed.widths, parsed.face);
+  }
   return encodeThrownShape(parsed.params, parsed.face);
 }
+
+// ── thrown2 encoding ──────────────────────────────────────────────────────
+
+/**
+ * How many widen-able bands a given height produces.
+ * h=0 → 3 bands, h=1 → 6 bands.
+ */
+export function bandsForHeight(h: number): number {
+  return 3 + Math.round(clamp01(h) * 3);
+}
+
+/** Encode a thrown2 vase to a storable string. */
+export function encodeThrown2Shape(
+  h: number,
+  widths: number[],
+  face: FaceId
+): string {
+  const hStr = clamp01(h).toFixed(3);
+  const wStr = widths.map((w) => clamp01(w).toFixed(3)).join(",");
+  const faceId: FaceId = VALID_FACE_IDS.has(face) ? face : "none";
+  return `thrown2:h=${hStr};w=${wStr};face=${faceId}`;
+}
+
+/**
+ * Linearly interpolate a width list to a new length.
+ * Preserves endpoints; samples evenly between them.
+ */
+export function resampleWidths(widths: number[], targetLen: number): number[] {
+  if (widths.length === targetLen) return widths.slice();
+  if (widths.length === 1) return Array(targetLen).fill(widths[0]);
+  const result: number[] = [];
+  for (let i = 0; i < targetLen; i++) {
+    const t = i / (targetLen - 1);
+    const srcIdx = t * (widths.length - 1);
+    const lo = Math.floor(srcIdx);
+    const hi = Math.min(Math.ceil(srcIdx), widths.length - 1);
+    const frac = srcIdx - lo;
+    result.push(widths[lo] + (widths[hi] - widths[lo]) * frac);
+  }
+  return result;
+}
+
+/** Default thrown2 widths for a pleasant S-curve at h=0.6 (5 bands) */
+export const DEFAULT_THROWN2_WIDTHS = [0.35, 0.55, 0.72, 0.6, 0.38];
+export const DEFAULT_THROWN2_H = 0.6;
 
 // ── buildThrownPath ───────────────────────────────────────────────────────
 // Generates a smooth symmetric SVG path from the 5 params.
@@ -352,6 +447,133 @@ export function buildThrownPath(params: ThrownParams): string {
     `C ${p(l_bToN_cp1x)} ${p(l_bToN_cp1y)}, ${p(l_bToN_cp2x)} ${p(l_bToN_cp2y)}, ${p(lBelly)} ${p(bellyY)}`,
     // Left side: belly → foot
     `C ${p(l_fToB_cp1x)} ${p(l_fToB_cp1y)}, ${p(l_fToB_cp2x)} ${p(l_fToB_cp2y)}, ${p(lFoot)} ${p(footY)}`,
+    // Close along foot
+    `Q 32 ${p(footY + 1.5)}, ${p(rFoot)} ${p(footY)}`,
+    "Z",
+  ].join(" ");
+}
+
+// ── buildThrown2Path ──────────────────────────────────────────────────────
+// Generates a smooth symmetric SVG path from h + width stops.
+// 64×64 viewBox; center = x=32.
+// widths[0] = foot width (bottom), widths[N-1] = lip width (top).
+// Uses Catmull-Rom → cubic bézier conversion for smooth interpolation.
+
+export function buildThrown2Path(h: number, widths: number[]): string {
+  const safeH = clamp01(h);
+  const p = (n: number) => n.toFixed(2);
+
+  // Vertical extents
+  const topY    = 4 + (1 - safeH) * 14;   // taller → lower topY
+  const bottomY = 60;
+
+  const N = widths.length; // number of bands (3..6)
+
+  // Compute Y positions for each band (evenly distributed foot→lip)
+  // Band 0 = foot (bottomY), Band N-1 = lip (topY)
+  const bandY: number[] = [];
+  for (let i = 0; i < N; i++) {
+    const t = i / (N - 1);
+    bandY.push(bottomY - t * (bottomY - topY)); // bottom to top
+  }
+
+  // Compute right-side X positions (half-widths clamped)
+  // min half-width ~3.2 (10% of 32), max ~30.4 (95%)
+  const MIN_HW = 3.2;
+  const MAX_HW = 30.4;
+  const rightX: number[] = widths.map((w, i) => {
+    const hw = MIN_HW + clamp01(w) * (MAX_HW - MIN_HW);
+    // Foot gets a bit of extra stability — ensure foot isn't wider than belly
+    return 32 + hw;
+  });
+
+  // Small lip flare: the topmost point gets a slight extra flair
+  const lipFlare = 1.5;
+  const lipRightX = rightX[N - 1] + lipFlare;
+  const lipLeftX  = 32 - (lipRightX - 32);
+
+  // Build the right-side profile using Catmull-Rom → cubic bézier
+  // Points array for the right side (from foot to lip)
+  interface Pt { x: number; y: number }
+  const rightPts: Pt[] = rightX.map((rx, i) => ({
+    x: i === N - 1 ? lipRightX : rx,
+    y: bandY[i],
+  }));
+
+  // Catmull-Rom to cubic Bezier conversion for a chain of points
+  // We add phantom endpoints to make the ends feel natural
+  const phantom0: Pt = {
+    x: rightPts[0].x - (rightPts[1].x - rightPts[0].x),
+    y: rightPts[0].y - (rightPts[1].y - rightPts[0].y),
+  };
+  const phantomN: Pt = {
+    x: rightPts[N - 1].x + (rightPts[N - 1].x - rightPts[N - 2].x),
+    y: rightPts[N - 1].y + (rightPts[N - 1].y - rightPts[N - 2].y),
+  };
+  const allPts: Pt[] = [phantom0, ...rightPts, phantomN];
+
+  // tension α for Catmull-Rom (0.5 = centripetal)
+  const alpha = 0.5;
+
+  function catmullToBez(p0: Pt, p1: Pt, p2: Pt, p3: Pt): [Pt, Pt] {
+    const cp1: Pt = {
+      x: p1.x + (p2.x - p0.x) * alpha,
+      y: p1.y + (p2.y - p0.y) * alpha,
+    };
+    const cp2: Pt = {
+      x: p2.x - (p3.x - p1.x) * alpha,
+      y: p2.y - (p3.y - p1.y) * alpha,
+    };
+    return [cp1, cp2];
+  }
+
+  // Build right-side path segments (foot → lip)
+  const rightSegments: string[] = [];
+  for (let i = 0; i < N - 1; i++) {
+    const [cp1, cp2] = catmullToBez(allPts[i], allPts[i + 1], allPts[i + 2], allPts[i + 3]);
+    rightSegments.push(
+      `C ${p(cp1.x)} ${p(cp1.y)}, ${p(cp2.x)} ${p(cp2.y)}, ${p(allPts[i + 2].x)} ${p(allPts[i + 2].y)}`
+    );
+  }
+
+  // Build left-side profile: mirror of right, from lip → foot
+  // We reverse the points and mirror around x=32
+  const leftPts: Pt[] = rightPts.map((pt) => ({ x: 64 - pt.x, y: pt.y })).reverse();
+  // Lip left has the flare
+  leftPts[0] = { x: lipLeftX, y: bandY[N - 1] };
+
+  const phantomL0: Pt = {
+    x: leftPts[0].x - (leftPts[1].x - leftPts[0].x),
+    y: leftPts[0].y - (leftPts[1].y - leftPts[0].y),
+  };
+  const phantomLN: Pt = {
+    x: leftPts[N - 1].x + (leftPts[N - 1].x - leftPts[N - 2].x),
+    y: leftPts[N - 1].y + (leftPts[N - 1].y - leftPts[N - 2].y),
+  };
+  const allLeftPts: Pt[] = [phantomL0, ...leftPts, phantomLN];
+
+  const leftSegments: string[] = [];
+  for (let i = 0; i < N - 1; i++) {
+    const [cp1, cp2] = catmullToBez(allLeftPts[i], allLeftPts[i + 1], allLeftPts[i + 2], allLeftPts[i + 3]);
+    leftSegments.push(
+      `C ${p(cp1.x)} ${p(cp1.y)}, ${p(cp2.x)} ${p(cp2.y)}, ${p(allLeftPts[i + 2].x)} ${p(allLeftPts[i + 2].y)}`
+    );
+  }
+
+  const footY  = bandY[0];
+  const rFoot  = rightPts[0].x;
+  const lFoot  = leftPts[N - 1].x;
+  const lipY   = bandY[N - 1];
+
+  return [
+    // Start at right foot
+    `M ${p(rFoot)} ${p(footY)}`,
+    // Right side: foot → lip
+    ...rightSegments,
+    // Lip top arc
+    `Q 32 ${p(lipY - 2)}, ${p(lipLeftX)} ${p(lipY)}`,
+    // Left side: lip → foot
+    ...leftSegments,
     // Close along foot
     `Q 32 ${p(footY + 1.5)}, ${p(rFoot)} ${p(footY)}`,
     "Z",

@@ -11,6 +11,12 @@ import {
   DEFAULT_THROWN_PARAMS,
   encodeThrownShape,
   buildThrownPath,
+  encodeThrown2Shape,
+  buildThrown2Path,
+  bandsForHeight,
+  resampleWidths,
+  DEFAULT_THROWN2_WIDTHS,
+  DEFAULT_THROWN2_H,
 } from "@/lib/avatars";
 import type {
   AvatarShape,
@@ -57,61 +63,55 @@ const WHEEL_STYLE = `
 }
 `;
 
-// Zone definitions for drag interaction (fraction of vase height)
-// Zones map to which params get nudged
-type DragZone = "lip" | "belly" | "foot" | null;
-
-function getDragZone(relY: number): DragZone {
-  // relY = 0 (top) to 1 (bottom)
-  if (relY < 0.3)  return "lip";
-  if (relY < 0.65) return "belly";
-  return "foot";
-}
-
-// Slightly randomize params for "surprise me"
-function randomParams(): ThrownParams {
-  return {
-    h: 0.25 + Math.random() * 0.75,
-    b: 0.2  + Math.random() * 0.8,
-    n: 0.1  + Math.random() * 0.7,
-    l: 0.05 + Math.random() * 0.65,
-    f: 0.15 + Math.random() * 0.7,
-  };
+// Slightly randomize params for "surprise me" (thrown2)
+function randomThrown2Params(): { h: number; widths: number[] } {
+  const h = 0.2 + Math.random() * 0.8;
+  const n = bandsForHeight(h);
+  const widths = Array.from({ length: n }, () => 0.2 + Math.random() * 0.8);
+  return { h, widths };
 }
 
 // ── WheelVasePreview ──────────────────────────────────────────────────────
-// The big pottery-wheel sculpting area.
+// The big pottery-wheel sculpting area — now uses thrown2.
 
 interface WheelVasePreviewProps {
-  params: ThrownParams;
+  h: number;
+  widths: number[];
   glaze: AvatarGlaze;
   pattern: AvatarPattern;
   face: FaceId;
-  onParamsChange: (p: ThrownParams) => void;
+  onHeightChange: (h: number) => void;
+  onWidthsChange: (widths: number[]) => void;
 }
 
 function WheelVasePreview({
-  params,
+  h,
+  widths,
   glaze,
   pattern,
   face,
-  onParamsChange,
+  onHeightChange,
+  onWidthsChange,
 }: WheelVasePreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
     active: boolean;
     startX: number;
     startY: number;
-    startParams: ThrownParams;
-    zone: DragZone;
+    startH: number;
+    startWidths: number[];
+    activeBandIndex: number;
+    relYAtDown: number;
   }>({
     active: false,
     startX: 0,
     startY: 0,
-    startParams: params,
-    zone: null,
+    startH: h,
+    startWidths: widths.slice(),
+    activeBandIndex: 0,
+    relYAtDown: 0.5,
   });
-  const [hoveredZone, setHoveredZone] = useState<DragZone>(null);
+  const [hoveredBandIndex, setHoveredBandIndex] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   // Size of preview in px
@@ -129,6 +129,17 @@ function WheelVasePreview({
     return { relX, relY };
   }
 
+  /**
+   * Map a pointer relY (0=top, 1=bottom) to the nearest band index.
+   * Bands are indexed 0=foot (bottom) to N-1=lip (top).
+   */
+  function bandIndexForRelY(relY: number, n: number): number {
+    // relY=0 → lip (top, index N-1), relY=1 → foot (bottom, index 0)
+    const t = 1 - relY; // 0=foot, 1=lip
+    const idx = Math.round(t * (n - 1));
+    return Math.max(0, Math.min(n - 1, idx));
+  }
+
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
     e.preventDefault();
     const el = containerRef.current;
@@ -136,63 +147,70 @@ function WheelVasePreview({
     el.setPointerCapture(e.pointerId);
 
     const { relY } = getRelativePos(e);
-    const zone = getDragZone(relY);
+    const n = widths.length;
+    const activeBandIndex = bandIndexForRelY(relY, n);
 
     dragRef.current = {
       active: true,
       startX: e.clientX,
       startY: e.clientY,
-      startParams: { ...params },
-      zone,
+      startH: h,
+      startWidths: widths.slice(),
+      activeBandIndex,
+      relYAtDown: relY,
     };
     setIsDragging(true);
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
     if (!dragRef.current.active) {
-      // Update hover zone
+      // Update hover band
       const { relY } = getRelativePos(e);
-      setHoveredZone(getDragZone(relY));
+      setHoveredBandIndex(bandIndexForRelY(relY, widths.length));
       return;
     }
 
     e.preventDefault();
-    const dx = e.clientX - dragRef.current.startX;
     const dy = e.clientY - dragRef.current.startY;
-    const sp = dragRef.current.startParams;
+    const dx = e.clientX - dragRef.current.startX;
 
-    // Sensitivity: pixels to [0,1] range
-    const hSens = 1 / PREVIEW_SIZE;
     const vSens = 1 / PREVIEW_SIZE;
+    const hSens = 1 / PREVIEW_SIZE;
 
-    // Vertical drag (anywhere) always adjusts height
+    // Vertical drag adjusts height
     const hDelta = -dy * vSens * 1.4; // pull up = taller
+    const newH = Math.max(0, Math.min(1, dragRef.current.startH + hDelta));
 
-    const newParams = { ...sp };
+    // Horizontal drag adjusts the active band's width
+    const wDelta = dx * hSens * 1.6;
+    const bi = dragRef.current.activeBandIndex;
+    const newWidths = dragRef.current.startWidths.slice();
 
-    // Height from vertical drag
-    newParams.h = Math.max(0, Math.min(1, sp.h + hDelta));
-
-    // Horizontal drag adjusts zone-specific param
-    const horzDelta = dx * hSens * 1.6;
-
-    switch (dragRef.current.zone) {
-      case "lip":
-        // Horizontal → neck width; also some lip
-        newParams.n = Math.max(0, Math.min(1, sp.n + horzDelta));
-        newParams.l = Math.max(0, Math.min(1, sp.l + horzDelta * 0.6));
-        break;
-      case "belly":
-        // Horizontal → belly width
-        newParams.b = Math.max(0, Math.min(1, sp.b + horzDelta));
-        break;
-      case "foot":
-        // Horizontal → foot width
-        newParams.f = Math.max(0, Math.min(1, sp.f + horzDelta));
-        break;
+    // When height crosses band thresholds, resample widths live
+    const prevBands = bandsForHeight(dragRef.current.startH);
+    const newBands = bandsForHeight(newH);
+    let adjustedWidths: number[];
+    if (newBands !== prevBands) {
+      // Resample so silhouette doesn't jump
+      adjustedWidths = resampleWidths(newWidths, newBands);
+    } else {
+      adjustedWidths = newWidths;
     }
 
-    onParamsChange(newParams);
+    // Apply horizontal drag to the band nearest to drag start relY,
+    // mapped to the (potentially resampled) new band array
+    const newBandIdx = Math.round(
+      (dragRef.current.activeBandIndex / Math.max(1, prevBands - 1)) *
+        Math.max(1, newBands - 1)
+    );
+    const clampedIdx = Math.max(0, Math.min(newBands - 1, newBandIdx));
+    adjustedWidths[clampedIdx] = Math.max(
+      0,
+      Math.min(1, (adjustedWidths[clampedIdx] ?? 0.5) + wDelta)
+    );
+
+    onHeightChange(newH);
+    onWidthsChange(adjustedWidths);
   }
 
   function handlePointerUp() {
@@ -201,18 +219,23 @@ function WheelVasePreview({
   }
 
   function handlePointerLeave() {
-    setHoveredZone(null);
+    setHoveredBandIndex(null);
     if (!dragRef.current.active) {
       setIsDragging(false);
     }
   }
 
-  // Zone hint labels
-  const zoneHints: { zone: DragZone; label: string; topFrac: number }[] = [
-    { zone: "lip",   label: "← pull rim →",  topFrac: 0.12 },
-    { zone: "belly", label: "← shape belly →", topFrac: 0.47 },
-    { zone: "foot",  label: "← widen foot →",  topFrac: 0.82 },
-  ];
+  // Compute band boundary Y positions (in the 180px preview space)
+  // Band 0 = foot (bottom), Band N-1 = lip (top)
+  const N = widths.length;
+  const bandBoundaryYs: number[] = [];
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    // t=0 → top (lip side), t=1 → bottom (foot side)
+    bandBoundaryYs.push(t * PREVIEW_SIZE);
+  }
+
+  const shapeStr = encodeThrown2Shape(h, widths, face);
 
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 0 }}>
@@ -238,46 +261,65 @@ function WheelVasePreview({
         role="img"
         aria-label="Drag to sculpt your vase"
       >
-        {/* Zone hint overlays */}
-        {!isDragging && zoneHints.map(({ zone, label, topFrac }) => (
-          <div
-            key={zone}
+        {/* Per-band dashed boundary lines + handle dots */}
+        {!isDragging && (
+          <svg
             style={{
               position: "absolute",
-              left: 0,
-              right: 0,
-              top: `${topFrac * 100}%`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              inset: 0,
               pointerEvents: "none",
-              opacity: hoveredZone === zone ? 1 : 0,
-              transition: "opacity 0.18s ease",
-              zIndex: 10,
+              zIndex: 5,
             }}
+            width={PREVIEW_SIZE}
+            height={PREVIEW_SIZE}
+            viewBox={`0 0 ${PREVIEW_SIZE} ${PREVIEW_SIZE}`}
+            fill="none"
           >
-            <span
-              style={{
-                fontFamily: "var(--font-hand)",
-                fontSize: "0.72rem",
-                color: "#B85C2A",
-                background: "rgba(245,240,232,0.88)",
-                border: "1px dashed #B85C2A",
-                borderRadius: 4,
-                padding: "1px 6px",
-                whiteSpace: "nowrap",
-                letterSpacing: "0.01em",
-              }}
-            >
-              {label}
-            </span>
-          </div>
-        ))}
+            {Array.from({ length: N - 1 }, (_, i) => {
+              // Band boundaries between band i and i+1 (from top)
+              // The boundary at index i+1 from top = fraction (i+1)/N of height
+              const fracFromTop = (i + 1) / N;
+              const yPos = fracFromTop * PREVIEW_SIZE;
+              const bandIdxFromBottom = N - 1 - i; // which band this boundary is below
+              const isHovered = hoveredBandIndex === bandIdxFromBottom || hoveredBandIndex === bandIdxFromBottom - 1;
+              return (
+                <g key={i}>
+                  <line
+                    x1="10"
+                    y1={yPos}
+                    x2={PREVIEW_SIZE - 10}
+                    y2={yPos}
+                    stroke="#B85C2A"
+                    strokeWidth="0.8"
+                    strokeDasharray="3 5"
+                    opacity={isHovered ? 0.7 : 0.25}
+                    style={{ transition: "opacity 0.15s ease" }}
+                  />
+                </g>
+              );
+            })}
+            {/* Handle dot for hovered band */}
+            {hoveredBandIndex !== null && (() => {
+              const bandFromTop = N - 1 - hoveredBandIndex;
+              const centerFrac = (bandFromTop + 0.5) / N;
+              const cy = centerFrac * PREVIEW_SIZE;
+              return (
+                <circle
+                  cx={PREVIEW_SIZE / 2}
+                  cy={cy}
+                  r={4}
+                  fill="#B85C2A"
+                  opacity={0.55}
+                />
+              );
+            })()}
+          </svg>
+        )}
 
         {/* Vase avatar — stays still, symmetry implies the spinning */}
         <div style={{ position: "relative", zIndex: 2 }}>
           <VaseAvatar
-            shape={encodeThrownShape(params, face)}
+            shape={shapeStr}
             glaze={glaze}
             pattern={pattern}
             size={PREVIEW_SIZE - 20}
@@ -296,7 +338,7 @@ function WheelVasePreview({
             fill="none"
           >
             <path
-              d={buildThrownPath(params)}
+              d={buildThrown2Path(h, widths)}
               fill="none"
               stroke="rgba(255,255,255,0.55)"
               strokeWidth="2.5"
@@ -308,7 +350,7 @@ function WheelVasePreview({
               }}
             />
             <path
-              d={buildThrownPath(params)}
+              d={buildThrown2Path(h, widths)}
               fill="none"
               stroke="rgba(255,255,255,0.3)"
               strokeWidth="1.5"
@@ -321,6 +363,60 @@ function WheelVasePreview({
             />
           </svg>
         </div>
+
+        {/* Band count indicator */}
+        <div
+          style={{
+            position: "absolute",
+            top: 4,
+            right: 4,
+            fontFamily: "var(--font-hand)",
+            fontSize: "0.68rem",
+            color: "#B85C2A",
+            background: "rgba(245,240,232,0.82)",
+            border: "1px dashed #B85C2A",
+            borderRadius: 4,
+            padding: "1px 5px",
+            pointerEvents: "none",
+            opacity: isDragging ? 0.6 : 0.9,
+            zIndex: 10,
+          }}
+        >
+          {N} bands
+        </div>
+
+        {/* Zone hint label — show which band is hovered */}
+        {!isDragging && hoveredBandIndex !== null && (
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: `${((N - 1 - hoveredBandIndex + 0.5) / N) * 100}%`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              pointerEvents: "none",
+              zIndex: 10,
+            }}
+          >
+            <span
+              style={{
+                fontFamily: "var(--font-hand)",
+                fontSize: "0.72rem",
+                color: "#B85C2A",
+                background: "rgba(245,240,232,0.88)",
+                border: "1px dashed #B85C2A",
+                borderRadius: 4,
+                padding: "1px 6px",
+                whiteSpace: "nowrap",
+                letterSpacing: "0.01em",
+              }}
+            >
+              ← band {hoveredBandIndex + 1} →
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Wheel base (spinning) */}
@@ -392,7 +488,7 @@ function WheelVasePreview({
           transition: "opacity 0.15s",
         }}
       >
-        {isDragging ? "shaping…" : "drag to sculpt your vase"}
+        {isDragging ? "shaping…" : "drag up/down = height · left/right = width"}
       </p>
     </div>
   );
@@ -416,7 +512,7 @@ function MiniVaseFace({
   onClick: () => void;
   label: string;
 }) {
-  const shapeStr = encodeThrownShape(DEFAULT_THROWN_PARAMS, face);
+  const shapeStr = encodeThrown2Shape(DEFAULT_THROWN2_H, DEFAULT_THROWN2_WIDTHS, face);
   return (
     <button
       type="button"
@@ -463,8 +559,9 @@ export default function AvatarBuilder({
   // Mode: "throw" = minigame; "classic" = preset picker (via disclosure)
   const [mode, setMode] = useState<"throw" | "classic">("throw");
 
-  // Thrown vase state
-  const [params, setParams] = useState<ThrownParams>({ ...DEFAULT_THROWN_PARAMS });
+  // Thrown2 vase state
+  const [thrown2H, setThrown2H] = useState<number>(DEFAULT_THROWN2_H);
+  const [thrown2Widths, setThrown2Widths] = useState<number[]>(DEFAULT_THROWN2_WIDTHS.slice());
   const [face, setFace] = useState<FaceId>("happy");
 
   // Shared state
@@ -477,19 +574,37 @@ export default function AvatarBuilder({
   // Classic disclosure open/closed
   const [classicOpen, setClassicOpen] = useState(false);
 
+  // Handle height changes — resampling widths if band count changes
+  function handleHeightChange(newH: number) {
+    const prevBands = bandsForHeight(thrown2H);
+    const newBands = bandsForHeight(newH);
+    setThrown2H(newH);
+    if (newBands !== prevBands) {
+      setThrown2Widths((prev) => resampleWidths(prev, newBands));
+    }
+  }
+
+  // Handle width array changes from the wheel (already resampled by wheel)
+  function handleWidthsChange(newWidths: number[]) {
+    setThrown2Widths(newWidths);
+  }
+
   // The final shape string to emit
   const shapeValue = mode === "throw"
-    ? encodeThrownShape(params, face)
+    ? encodeThrown2Shape(thrown2H, thrown2Widths, face)
     : classicShape;
 
   function handleSurprise() {
-    setParams(randomParams());
+    const { h, widths } = randomThrown2Params();
+    setThrown2H(h);
+    setThrown2Widths(widths);
     const faces: FaceId[] = ["happy", "sleepy", "winky", "surprised", "none"];
     setFace(faces[Math.floor(Math.random() * faces.length)]);
   }
 
   function handleReset() {
-    setParams({ ...DEFAULT_THROWN_PARAMS });
+    setThrown2H(DEFAULT_THROWN2_H);
+    setThrown2Widths(DEFAULT_THROWN2_WIDTHS.slice());
     setFace("happy");
   }
 
@@ -519,11 +634,13 @@ export default function AvatarBuilder({
       {mode === "throw" && (
         <div className="flex flex-col items-center gap-3">
           <WheelVasePreview
-            params={params}
+            h={thrown2H}
+            widths={thrown2Widths}
             glaze={glaze}
             pattern={pattern}
             face={face}
-            onParamsChange={setParams}
+            onHeightChange={handleHeightChange}
+            onWidthsChange={handleWidthsChange}
           />
 
           {/* Action buttons */}
@@ -698,7 +815,7 @@ export default function AvatarBuilder({
               aria-pressed={pattern === p.id}
             >
               <VaseAvatar
-                shape={mode === "throw" ? encodeThrownShape(params, face) : classicShape}
+                shape={mode === "throw" ? encodeThrown2Shape(thrown2H, thrown2Widths, face) : classicShape}
                 glaze={glaze}
                 pattern={p.id}
                 size={32}

@@ -5,6 +5,7 @@ import {
   getPattern,
   parseShape,
   buildThrownPath,
+  buildThrown2Path,
 } from "@/lib/avatars";
 import type { AvatarShape, AvatarGlaze, AvatarPattern, FaceId, ThrownParams } from "@/lib/avatars";
 
@@ -162,9 +163,10 @@ function FaceOverlay({
 
 /** Compute face center position relative to the vase shape */
 function getFacePosition(
-  kind: "preset" | "thrown",
+  kind: "preset" | "thrown" | "thrown2",
   path: string,
-  thrownParams?: ThrownParams
+  thrownParams?: ThrownParams,
+  thrown2?: { h: number; widths: number[] }
 ): { cx: number; cy: number; scale: number } {
   if (kind === "thrown" && thrownParams) {
     const { h, b } = thrownParams;
@@ -175,6 +177,25 @@ function getFacePosition(
     const faceY = topY + (bottomY - topY) * 0.52;
     // Scale based on belly width
     const scale = 0.55 + b * 0.35;
+    return { cx: 32, cy: faceY, scale };
+  }
+  if (kind === "thrown2" && thrown2) {
+    const { h, widths } = thrown2;
+    const topY = 4 + (1 - h) * 14;
+    const bottomY = 60;
+    // Place face near the widest band in the upper third
+    const N = widths.length;
+    const upperThirdEnd = Math.ceil(N * 0.67);
+    let maxW = -1;
+    let maxIdx = Math.floor(N * 0.5);
+    for (let i = 1; i < upperThirdEnd; i++) {
+      if (widths[i] > maxW) { maxW = widths[i]; maxIdx = i; }
+    }
+    const t = maxIdx / (N - 1);
+    // bandY at maxIdx: bottomY - t*(bottomY-topY)
+    const faceY = bottomY - t * (bottomY - topY);
+    const avgWidth = widths.reduce((a, b) => a + b, 0) / widths.length;
+    const scale = 0.5 + avgWidth * 0.4;
     return { cx: 32, cy: faceY, scale };
   }
   // For preset shapes: center vertically around 57% of viewBox height, centered X
@@ -191,17 +212,20 @@ export default function VaseAvatar({
   // Parse shape
   const parsed = parseShape(shapeProp ?? "round-belly");
   const isThrownShape = parsed.kind === "thrown";
+  const isThrown2Shape = parsed.kind === "thrown2";
 
   // Resolve the SVG path
   const vasePath = isThrownShape
     ? buildThrownPath(parsed.params)
-    : getShape(parsed.id).path;
+    : isThrown2Shape
+      ? buildThrown2Path(parsed.h, parsed.widths)
+      : getShape(parsed.id).path;
 
   const glazeData  = getGlaze(glazeProp  ?? "terracotta");
   const patternId  = (patternProp ?? "plain") as AvatarPattern;
 
   // Face only exists on thrown vases
-  const face: FaceId = isThrownShape ? parsed.face : "none";
+  const face: FaceId = (isThrownShape || isThrown2Shape) ? parsed.face : "none";
 
   // useId guarantees document-unique, SSR/hydration-stable ids even when the
   // same shape/glaze/pattern combo renders multiple times on one page.
@@ -272,7 +296,8 @@ export default function VaseAvatar({
   const { cx: faceCx, cy: faceCy, scale: faceScale } = getFacePosition(
     parsed.kind,
     vasePath,
-    isThrownShape ? parsed.params : undefined
+    isThrownShape ? parsed.params : undefined,
+    isThrown2Shape ? { h: parsed.h, widths: parsed.widths } : undefined
   );
 
   // Scale the face rendering (faces are designed at scale=1 for ~64px, so adjust)

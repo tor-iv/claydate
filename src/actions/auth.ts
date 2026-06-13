@@ -13,6 +13,7 @@ import {
   DEFAULT_AVATAR,
   parseShape,
   encodeThrownShape,
+  encodeThrown2Shape,
 } from "@/lib/avatars";
 import type { AvatarShape, AvatarGlaze, AvatarPattern } from "@/lib/avatars";
 
@@ -27,6 +28,13 @@ function validShape(id: string): AvatarShape {
     if (parsed.kind === "thrown") {
       // Re-encode with clamped values to sanitize client input
       return encodeThrownShape(parsed.params, parsed.face) as AvatarShape;
+    }
+  }
+  // Accept thrown2 encodings: parse, clamp, re-encode canonically
+  if (id.startsWith("thrown2:")) {
+    const parsed = parseShape(id);
+    if (parsed.kind === "thrown2") {
+      return encodeThrown2Shape(parsed.h, parsed.widths, parsed.face) as AvatarShape;
     }
   }
   return DEFAULT_AVATAR.shape;

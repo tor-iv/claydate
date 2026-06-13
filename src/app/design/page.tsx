@@ -14,6 +14,9 @@ import {
   AVATAR_PATTERNS,
   AVATAR_FACES,
   encodeThrownShape,
+  encodeThrown2Shape,
+  bandsForHeight,
+  resampleWidths,
   DEFAULT_THROWN_PARAMS,
 } from "@/lib/avatars";
 import type { DoodleName } from "@/components/ui/DoodleIcon";
@@ -204,6 +207,59 @@ export default function DesignPage() {
               return (
                 <div key={glazeId} className="flex flex-col items-center gap-2">
                   <VaseAvatar shape={shapeStr} glaze={glazeId} pattern="dots" size={72} />
+                  <span style={{ fontFamily: "var(--font-hand)", fontSize: "0.8rem", color: "#5C3D2E" }}>
+                    {glazeId}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* ── Thrown2 Dynamic Bands Gallery ───────────────────────── */}
+        <section>
+          <h2
+            className="text-3xl mb-1"
+            style={{ fontFamily: "var(--font-hand)", color: "#2C1810" }}
+          >
+            Thrown2 — Height-Driven Bands
+          </h2>
+          <p className="text-sm mb-6" style={{ color: "#7A8C6E" }}>
+            3 bands (shortest) → 6 bands (tallest). Each vase uses <code>thrown2:</code> encoding.
+          </p>
+          {/* Row showing 3, 4, 5, 6 bands with gentle S-curve widths */}
+          <div className="flex flex-wrap gap-8 items-end">
+            {([3, 4, 5, 6] as const).map((numBands) => {
+              // Derive h from bandsForHeight inverse: 3+round(h*3)=n → h=(n-3)/3
+              const h = (numBands - 3) / 3;
+              // Gentle S-curve widths: foot narrow, belly wide, neck narrow, lip flared
+              const sCurveBase = [0.32, 0.5, 0.72, 0.55, 0.35, 0.42];
+              const widths = resampleWidths(sCurveBase, numBands);
+              const shapeStr = encodeThrown2Shape(h, widths, "happy");
+              return (
+                <div key={numBands} className="flex flex-col items-center gap-2">
+                  <VaseAvatar shape={shapeStr} glaze="terracotta" pattern="plain" size={80} />
+                  <span style={{ fontFamily: "var(--font-hand)", fontSize: "0.85rem", color: "#5C3D2E" }}>
+                    {numBands} bands
+                  </span>
+                  <span style={{ fontFamily: "var(--font-body)", fontSize: "0.72rem", color: "#7A8C6E" }}>
+                    h≈{h.toFixed(2)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          {/* Second row: same bands on different glazes with different faces */}
+          <div className="flex flex-wrap gap-6 items-end mt-8">
+            {(["celadon", "cobalt", "honey", "midnight"] as const).map((glazeId, i) => {
+              const numBands = 3 + i;
+              const h = i / 3;
+              const widths = resampleWidths([0.4, 0.65, 0.8, 0.6, 0.35], numBands);
+              const faces: FaceId[] = ["winky", "sleepy", "surprised", "happy"];
+              const shapeStr = encodeThrown2Shape(h, widths, faces[i]);
+              return (
+                <div key={glazeId} className="flex flex-col items-center gap-2">
+                  <VaseAvatar shape={shapeStr} glaze={glazeId} pattern="squiggle" size={72} />
                   <span style={{ fontFamily: "var(--font-hand)", fontSize: "0.8rem", color: "#5C3D2E" }}>
                     {glazeId}
                   </span>
