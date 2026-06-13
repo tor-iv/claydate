@@ -1,9 +1,11 @@
 import Link from "next/link";
 import DoodleIcon from "@/components/ui/DoodleIcon";
 import UserTag from "./UserTag";
+import NavLinks from "./NavLinks";
+import { logoutAction } from "@/actions/auth";
 import type { AvatarShape, AvatarGlaze, AvatarPattern } from "@/lib/avatars";
 
-interface PageHeaderUser {
+export interface PageHeaderUser {
   name: string;
   avatarShape: AvatarShape | string;
   avatarGlaze: AvatarGlaze | string;
@@ -12,16 +14,9 @@ interface PageHeaderUser {
 
 interface PageHeaderProps {
   user?: PageHeaderUser | null;
-  activePath?: string;
 }
 
-const NAV_LINKS = [
-  { href: "/calendar",          label: "Calendar" },
-  { href: "/calendar/upcoming", label: "Upcoming" },
-  { href: "/meetups/new",       label: "New Meetup" },
-];
-
-export default function PageHeader({ user = null, activePath }: PageHeaderProps) {
+export default function PageHeader({ user = null }: PageHeaderProps) {
   return (
     <header
       className="flex flex-wrap items-center justify-between gap-y-2 px-4 py-3 sm:px-6 sm:py-4"
@@ -63,35 +58,31 @@ export default function PageHeader({ user = null, activePath }: PageHeaderProps)
         </span>
       </Link>
 
-      {/* Nav */}
-      {/* Full-width centered row below the logo on small screens; inline on md+ */}
-      <nav className="order-3 w-full md:order-none md:w-auto flex items-center justify-center gap-1">
-        {NAV_LINKS.map((link) => {
-          const isActive = activePath === link.href;
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              aria-current={isActive ? "page" : undefined}
-              className="px-3 py-1.5 rounded-lg text-sm transition-colors"
-              style={{
-                fontFamily: "var(--font-hand)",
-                color: isActive ? "#F5F0E8" : "#2C1810",
-                background: isActive ? "#B85C2A" : "transparent",
-                border: isActive ? "1.5px solid #2C1810" : "1.5px solid transparent",
-                fontSize: "1rem",
-              }}
-            >
-              {link.label}
-            </Link>
-          );
-        })}
-      </nav>
+      {/* Nav — active state computed client-side via usePathname */}
+      <NavLinks />
 
       {/* User / right side */}
-      <div className="flex items-center">
+      <div className="flex items-center gap-2">
         {user ? (
-          <UserTag user={user} />
+          <>
+            <UserTag user={user} />
+            <form action={logoutAction}>
+              <button
+                type="submit"
+                className="px-3 py-1.5 rounded-lg text-sm transition-colors"
+                style={{
+                  fontFamily: "var(--font-hand)",
+                  fontSize: "0.9rem",
+                  color: "var(--color-clay-ink-muted)",
+                  background: "transparent",
+                  border: "1.5px solid rgba(44,24,16,0.25)",
+                  cursor: "pointer",
+                }}
+              >
+                bye!
+              </button>
+            </form>
+          </>
         ) : (
           <Link
             href="/login"

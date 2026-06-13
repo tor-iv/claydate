@@ -29,7 +29,7 @@ export default function DesignPage() {
     <div style={{ fontFamily: "var(--font-body)", color: "#2C1810" }}>
       {/* Page Header preview */}
       <section className="mb-0">
-        <PageHeader user={FAKE_USER} activePath="/calendar" />
+        <PageHeader user={FAKE_USER} />
       </section>
 
       <div className="max-w-5xl mx-auto px-6 py-10 flex flex-col gap-16">
