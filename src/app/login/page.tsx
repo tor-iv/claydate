@@ -44,7 +44,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               color: "var(--color-clay-ink-muted)",
             }}
           >
-            tell us your name &amp; pick your vase
+            just enter your name to hop in
           </p>
         </div>
 
@@ -91,7 +91,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               />
             </div>
 
-            {/* Divider */}
+            {/* Primary action — name + one tap is all you need */}
+            <InkButton type="submit" variant="primary" className="w-full">
+              <DoodleIcon name="pot" size={18} color="#F5F0E8" />
+              let&apos;s clay!
+            </InkButton>
+
+            {/* Divider — the vase is an optional flourish */}
             <div className="flex items-center gap-3">
               <div
                 className="flex-1"
@@ -106,7 +112,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                 }}
               >
                 <DoodleIcon name="sparkle" size={14} color="#B85C2A" />
-                {" "}make your vase{" "}
+                {" "}or make a vase (optional){" "}
                 <DoodleIcon name="sparkle" size={14} color="#B85C2A" />
               </span>
               <div
@@ -118,11 +124,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             {/* Avatar builder */}
             <AvatarBuilder />
 
-            {/* Submit */}
+            {/* Secondary submit for folks who scrolled down to sculpt */}
             <div className="flex justify-center pt-2">
-              <InkButton type="submit" variant="primary" className="w-full">
-                <DoodleIcon name="pot" size={18} color="#F5F0E8" />
-                let&apos;s clay!
+              <InkButton type="submit" variant="soft" className="w-full">
+                <DoodleIcon name="pot" size={18} color="#2C1810" />
+                let&apos;s clay with my vase!
               </InkButton>
             </div>
           </form>
