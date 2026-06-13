@@ -61,10 +61,13 @@ export default async function RootLayout({
       // If rows.length === 0, userId is stale (deleted DB row) — treat as logged out
     }
   } catch (e) {
-    // Session or DB error — render as logged out rather than crashing the
-    // layout, but log it: silent failures here look like "I keep getting
-    // logged out" with no trace
-    console.error("RootLayout: failed to resolve session user", e);
+    // Next probes routes for static rendering during build; reading cookies
+    // forces dynamic — that's expected, not an error worth logging. Only log
+    // genuine session/DB failures (silent ones look like "I keep getting
+    // logged out" with no trace).
+    if (!(e instanceof Error && e.message.includes("Dynamic server usage"))) {
+      console.error("RootLayout: failed to resolve session user", e);
+    }
     headerUser = null;
   }
 
