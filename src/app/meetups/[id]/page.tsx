@@ -307,6 +307,24 @@ export default async function MeetupDetailPage({ params }: MeetupDetailPageProps
           </h2>
           <CommentThread meetupId={id} comments={commentEntries} />
         </WobblyCard>
+
+        {/* Gallery link */}
+        <div className="mt-4 flex justify-center">
+          <a
+            href={`/meetups/${id}/gallery`}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg"
+            style={{
+              fontFamily: "var(--font-hand)",
+              fontSize: "1rem",
+              color: "#2C1810",
+              background: "rgba(232,213,176,0.6)",
+              border: "2px solid rgba(44,24,16,0.3)",
+              textDecoration: "none",
+            }}
+          >
+            📸 what we made
+          </a>
+        </div>
       </div>
     </main>
   );
