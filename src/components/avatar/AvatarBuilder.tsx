@@ -222,6 +222,7 @@ function WheelVasePreview({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         onPointerLeave={handlePointerLeave}
         style={{
           width: PREVIEW_SIZE,

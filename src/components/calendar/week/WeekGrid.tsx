@@ -379,7 +379,8 @@ export default function WeekGrid({
                         style={{
                           position: "absolute",
                           top: `${topPct}%`,
-                          height: `max(${heightPct}%, 44px)`,
+                          // 44px floor for tap targets, but never past the grid bottom
+                          height: `min(max(${heightPct}%, 44px), calc(100% - ${topPct}%))`,
                           left: `${leftPct + 1}%`,
                           width: `${widthPct - 2}%`,
                           zIndex: 2,
