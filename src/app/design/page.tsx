@@ -20,7 +20,7 @@ import {
   DEFAULT_THROWN_PARAMS,
 } from "@/lib/avatars";
 import type { DoodleName } from "@/components/ui/DoodleIcon";
-import type { FaceId } from "@/lib/avatars";
+import type { FaceId, EdgeStyle } from "@/lib/avatars";
 
 const FAKE_USER = {
   name: "Maya",
@@ -225,22 +225,27 @@ export default function DesignPage() {
             Thrown2 — Height-Driven Bands
           </h2>
           <p className="text-sm mb-6" style={{ color: "#7A8C6E" }}>
-            3 bands (shortest) → 6 bands (tallest). Each vase uses <code>thrown2:</code> encoding.
+            2 bands (shortest) → 6 bands (tallest), plus edge styles. Each vase uses <code>thrown2:</code> encoding.
           </p>
-          {/* Row showing 3, 4, 5, 6 bands with gentle S-curve widths */}
+          {/* Row: squat 2-band, mid 4-band, tall 6-band, angular example */}
           <div className="flex flex-wrap gap-8 items-end">
-            {([3, 4, 5, 6] as const).map((numBands) => {
-              // Derive h from bandsForHeight inverse: 3+round(h*3)=n → h=(n-3)/3
-              const h = (numBands - 3) / 3;
+            {([
+              { numBands: 2, label: "squat 2-band", face: "happy" as FaceId, edge: "round" as EdgeStyle, glaze: "terracotta" },
+              { numBands: 4, label: "mid 4-band",   face: "winky" as FaceId, edge: "round" as EdgeStyle, glaze: "celadon" },
+              { numBands: 6, label: "tall 6-band",  face: "sleepy" as FaceId, edge: "round" as EdgeStyle, glaze: "cobalt" },
+              { numBands: 4, label: "angular ◇",   face: "surprised" as FaceId, edge: "straight" as EdgeStyle, glaze: "honey" },
+            ]).map(({ numBands, label, face: faceId, edge, glaze: glazeId }) => {
+              // Derive h from bandsForHeight inverse: 2+round(h*4)=n → h=(n-2)/4
+              const h = (numBands - 2) / 4;
               // Gentle S-curve widths: foot narrow, belly wide, neck narrow, lip flared
               const sCurveBase = [0.32, 0.5, 0.72, 0.55, 0.35, 0.42];
               const widths = resampleWidths(sCurveBase, numBands);
-              const shapeStr = encodeThrown2Shape(h, widths, "happy");
+              const shapeStr = encodeThrown2Shape(h, widths, faceId, edge);
               return (
-                <div key={numBands} className="flex flex-col items-center gap-2">
-                  <VaseAvatar shape={shapeStr} glaze="terracotta" pattern="plain" size={80} />
+                <div key={label} className="flex flex-col items-center gap-2">
+                  <VaseAvatar shape={shapeStr} glaze={glazeId} pattern="plain" size={80} />
                   <span style={{ fontFamily: "var(--font-hand)", fontSize: "0.85rem", color: "#5C3D2E" }}>
-                    {numBands} bands
+                    {label}
                   </span>
                   <span style={{ fontFamily: "var(--font-body)", fontSize: "0.72rem", color: "#7A8C6E" }}>
                     h≈{h.toFixed(2)}
@@ -252,8 +257,10 @@ export default function DesignPage() {
           {/* Second row: same bands on different glazes with different faces */}
           <div className="flex flex-wrap gap-6 items-end mt-8">
             {(["celadon", "cobalt", "honey", "midnight"] as const).map((glazeId, i) => {
-              const numBands = 3 + i;
-              const h = i / 3;
+              // 2, 3, 4, 6 bands for visual variety
+              const bandCounts = [2, 3, 4, 6];
+              const numBands = bandCounts[i];
+              const h = (numBands - 2) / 4;
               const widths = resampleWidths([0.4, 0.65, 0.8, 0.6, 0.35], numBands);
               const faces: FaceId[] = ["winky", "sleepy", "surprised", "happy"];
               const shapeStr = encodeThrown2Shape(h, widths, faces[i]);

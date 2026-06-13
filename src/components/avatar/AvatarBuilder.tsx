@@ -24,6 +24,7 @@ import type {
   AvatarPattern,
   FaceId,
   ThrownParams,
+  EdgeStyle,
 } from "@/lib/avatars";
 
 interface AvatarBuilderProps {
@@ -80,6 +81,7 @@ interface WheelVasePreviewProps {
   glaze: AvatarGlaze;
   pattern: AvatarPattern;
   face: FaceId;
+  edge: EdgeStyle;
   onHeightChange: (h: number) => void;
   onWidthsChange: (widths: number[]) => void;
 }
@@ -90,6 +92,7 @@ function WheelVasePreview({
   glaze,
   pattern,
   face,
+  edge,
   onHeightChange,
   onWidthsChange,
 }: WheelVasePreviewProps) {
@@ -235,7 +238,7 @@ function WheelVasePreview({
     bandBoundaryYs.push(t * PREVIEW_SIZE);
   }
 
-  const shapeStr = encodeThrown2Shape(h, widths, face);
+  const shapeStr = encodeThrown2Shape(h, widths, face, edge);
 
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 0 }}>
@@ -338,7 +341,7 @@ function WheelVasePreview({
             fill="none"
           >
             <path
-              d={buildThrown2Path(h, widths)}
+              d={buildThrown2Path(h, widths, edge)}
               fill="none"
               stroke="rgba(255,255,255,0.55)"
               strokeWidth="2.5"
@@ -350,7 +353,7 @@ function WheelVasePreview({
               }}
             />
             <path
-              d={buildThrown2Path(h, widths)}
+              d={buildThrown2Path(h, widths, edge)}
               fill="none"
               stroke="rgba(255,255,255,0.3)"
               strokeWidth="1.5"
@@ -563,6 +566,7 @@ export default function AvatarBuilder({
   const [thrown2H, setThrown2H] = useState<number>(DEFAULT_THROWN2_H);
   const [thrown2Widths, setThrown2Widths] = useState<number[]>(DEFAULT_THROWN2_WIDTHS.slice());
   const [face, setFace] = useState<FaceId>("happy");
+  const [edge, setEdge] = useState<EdgeStyle>("round");
 
   // Shared state
   const [glaze,   setGlaze]   = useState<AvatarGlaze>(defaultGlaze);
@@ -591,7 +595,7 @@ export default function AvatarBuilder({
 
   // The final shape string to emit
   const shapeValue = mode === "throw"
-    ? encodeThrown2Shape(thrown2H, thrown2Widths, face)
+    ? encodeThrown2Shape(thrown2H, thrown2Widths, face, edge)
     : classicShape;
 
   function handleSurprise() {
@@ -600,12 +604,15 @@ export default function AvatarBuilder({
     setThrown2Widths(widths);
     const faces: FaceId[] = ["happy", "sleepy", "winky", "surprised", "none"];
     setFace(faces[Math.floor(Math.random() * faces.length)]);
+    // Randomize edge: ~30% chance of straight
+    setEdge(Math.random() < 0.3 ? "straight" : "round");
   }
 
   function handleReset() {
     setThrown2H(DEFAULT_THROWN2_H);
     setThrown2Widths(DEFAULT_THROWN2_WIDTHS.slice());
     setFace("happy");
+    setEdge("round");
   }
 
   function switchToClassic(id: string) {
@@ -639,6 +646,7 @@ export default function AvatarBuilder({
             glaze={glaze}
             pattern={pattern}
             face={face}
+            edge={edge}
             onHeightChange={handleHeightChange}
             onWidthsChange={handleWidthsChange}
           />
@@ -730,15 +738,62 @@ export default function AvatarBuilder({
         </div>
       )}
 
-      {/* ── Face picker ─────────────────────────────────────────────────── */}
+      {/* ── Face + Edge picker ──────────────────────────────────────────── */}
       {mode === "throw" && (
         <section>
-          <h4
-            className="text-sm mb-2"
-            style={{ fontFamily: "var(--font-hand)", color: "#2C1810" }}
-          >
-            Face
-          </h4>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <h4
+              className="text-sm"
+              style={{ fontFamily: "var(--font-hand)", color: "#2C1810" }}
+            >
+              Face
+            </h4>
+            {/* Edge style toggle */}
+            <div className="flex gap-1" role="group" aria-label="Edge style">
+              <button
+                type="button"
+                onClick={() => setEdge("round")}
+                aria-pressed={edge === "round"}
+                style={{
+                  fontFamily: "var(--font-hand)",
+                  fontSize: "0.78rem",
+                  color: edge === "round" ? "#2C1810" : "#5C3D2E",
+                  background: edge === "round" ? "rgba(184,92,42,0.14)" : "rgba(232,213,176,0.3)",
+                  border: edge === "round" ? "2px solid #2C1810" : "2px solid transparent",
+                  borderRadius: "8px 0 0 8px",
+                  padding: "3px 10px",
+                  cursor: "pointer",
+                  transition: "background 0.12s, border-color 0.12s",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 3,
+                }}
+              >
+                <span aria-hidden="true">◠</span> rounded
+              </button>
+              <button
+                type="button"
+                onClick={() => setEdge("straight")}
+                aria-pressed={edge === "straight"}
+                style={{
+                  fontFamily: "var(--font-hand)",
+                  fontSize: "0.78rem",
+                  color: edge === "straight" ? "#2C1810" : "#5C3D2E",
+                  background: edge === "straight" ? "rgba(184,92,42,0.14)" : "rgba(232,213,176,0.3)",
+                  border: edge === "straight" ? "2px solid #2C1810" : "2px solid transparent",
+                  borderRadius: "0 8px 8px 0",
+                  padding: "3px 10px",
+                  cursor: "pointer",
+                  transition: "background 0.12s, border-color 0.12s",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 3,
+                }}
+              >
+                <span aria-hidden="true">◇</span> angular
+              </button>
+            </div>
+          </div>
           <div className="flex flex-wrap gap-2">
             {AVATAR_FACES.map((f) => (
               <MiniVaseFace
@@ -815,7 +870,7 @@ export default function AvatarBuilder({
               aria-pressed={pattern === p.id}
             >
               <VaseAvatar
-                shape={mode === "throw" ? encodeThrown2Shape(thrown2H, thrown2Widths, face) : classicShape}
+                shape={mode === "throw" ? encodeThrown2Shape(thrown2H, thrown2Widths, face, edge) : classicShape}
                 glaze={glaze}
                 pattern={p.id}
                 size={32}

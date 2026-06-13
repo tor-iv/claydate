@@ -172,10 +172,12 @@ export function encodeThrownShape(params: ThrownParams, face: FaceId): string {
   return `thrown:h=${h},b=${b},n=${n},l=${l},f=${f};face=${faceId}`;
 }
 
+export type EdgeStyle = "round" | "straight";
+
 export type ParsedShape =
   | { kind: "preset"; id: PresetShapeId }
   | { kind: "thrown"; params: ThrownParams; face: FaceId }
-  | { kind: "thrown2"; h: number; widths: number[]; face: FaceId };
+  | { kind: "thrown2"; h: number; widths: number[]; face: FaceId; edge: EdgeStyle };
 
 /** Parse an avatar_shape string to either a preset or thrown shape. */
 export function parseShape(shape: string): ParsedShape {
@@ -243,11 +245,11 @@ export function parseShape(shape: string): ParsedShape {
     }
   }
 
-  // thrown2 encoding: thrown2:h=0.85;w=0.45,0.72,0.91,0.66,0.38;face=happy
+  // thrown2 encoding: thrown2:h=0.85;w=0.45,0.72,0.91,0.66,0.38;edge=round;face=happy
   if (shape.startsWith("thrown2:")) {
     try {
       const rest = shape.slice("thrown2:".length);
-      // Split on ";" — expect h=..., w=..., face=...
+      // Split on ";" — expect h=..., w=..., edge=...(optional), face=...
       const parts: Record<string, string> = {};
       for (const seg of rest.split(";")) {
         const eqIdx = seg.indexOf("=");
@@ -266,7 +268,8 @@ export function parseShape(shape: string): ParsedShape {
         const n = parseFloat(v);
         return isNaN(n) ? null : clamp01(n);
       });
-      if (rawWidths.some((v) => v === null) || rawWidths.length < 1) {
+      // Accept 2..6 width entries
+      if (rawWidths.some((v) => v === null) || rawWidths.length < 2 || rawWidths.length > 6) {
         return { kind: "preset", id: DEFAULT_AVATAR.shape as PresetShapeId };
       }
       const parsedWidths = rawWidths as number[];
@@ -283,7 +286,12 @@ export function parseShape(shape: string): ParsedShape {
         ? (rawFace as FaceId)
         : "none";
 
-      return { kind: "thrown2", h, widths, face };
+      // Parse edge style — unknown/missing defaults to "round"
+      const rawEdge = parts["edge"];
+      const edge: EdgeStyle =
+        rawEdge === "straight" ? "straight" : "round";
+
+      return { kind: "thrown2", h, widths, face, edge };
     } catch {
       return { kind: "preset", id: DEFAULT_AVATAR.shape as PresetShapeId };
     }
@@ -300,7 +308,7 @@ export function canonicalizeShape(shape: string): string {
     return parsed.id;
   }
   if (parsed.kind === "thrown2") {
-    return encodeThrown2Shape(parsed.h, parsed.widths, parsed.face);
+    return encodeThrown2Shape(parsed.h, parsed.widths, parsed.face, parsed.edge);
   }
   return encodeThrownShape(parsed.params, parsed.face);
 }
@@ -309,22 +317,24 @@ export function canonicalizeShape(shape: string): string {
 
 /**
  * How many widen-able bands a given height produces.
- * h=0 → 3 bands, h=1 → 6 bands.
+ * h=0 → 2 bands, h=1 → 6 bands.
  */
 export function bandsForHeight(h: number): number {
-  return 3 + Math.round(clamp01(h) * 3);
+  return 2 + Math.round(clamp01(h) * 4);
 }
 
-/** Encode a thrown2 vase to a storable string. */
+/** Encode a thrown2 vase to a storable string. Always includes edge field canonically. */
 export function encodeThrown2Shape(
   h: number,
   widths: number[],
-  face: FaceId
+  face: FaceId,
+  edge: EdgeStyle = "round"
 ): string {
   const hStr = clamp01(h).toFixed(3);
   const wStr = widths.map((w) => clamp01(w).toFixed(3)).join(",");
   const faceId: FaceId = VALID_FACE_IDS.has(face) ? face : "none";
-  return `thrown2:h=${hStr};w=${wStr};face=${faceId}`;
+  const edgeVal: EdgeStyle = edge === "straight" ? "straight" : "round";
+  return `thrown2:h=${hStr};w=${wStr};edge=${edgeVal};face=${faceId}`;
 }
 
 /**
@@ -346,8 +356,8 @@ export function resampleWidths(widths: number[], targetLen: number): number[] {
   return result;
 }
 
-/** Default thrown2 widths for a pleasant S-curve at h=0.6 (5 bands) */
-export const DEFAULT_THROWN2_WIDTHS = [0.35, 0.55, 0.72, 0.6, 0.38];
+/** Default thrown2 widths for a pleasant S-curve at h=0.6 (4 bands with new formula) */
+export const DEFAULT_THROWN2_WIDTHS = [0.35, 0.65, 0.72, 0.38];
 export const DEFAULT_THROWN2_H = 0.6;
 
 // ── buildThrownPath ───────────────────────────────────────────────────────
@@ -457,33 +467,41 @@ export function buildThrownPath(params: ThrownParams): string {
 // Generates a smooth symmetric SVG path from h + width stops.
 // 64×64 viewBox; center = x=32.
 // widths[0] = foot width (bottom), widths[N-1] = lip width (top).
-// Uses Catmull-Rom → cubic bézier conversion for smooth interpolation.
+// Visual height: foot sits at y≈58, lip y lerps from ~34 (h=0, squat) to ~6 (h=1, tall).
+// Uses Catmull-Rom → cubic bézier for "round" edge; faceted quadratic eases for "straight".
 
-export function buildThrown2Path(h: number, widths: number[]): string {
+/** Compute the actual lip Y for a given h (used by VaseAvatar for face placement). */
+export function thrown2LipY(h: number): number {
+  return 34 - clamp01(h) * 28; // h=0 → 34, h=1 → 6
+}
+
+/** Compute the foot Y (constant). */
+export const THROWN2_FOOT_Y = 58;
+
+export function buildThrown2Path(h: number, widths: number[], edge: EdgeStyle = "round"): string {
   const safeH = clamp01(h);
   const p = (n: number) => n.toFixed(2);
 
-  // Vertical extents
-  const topY    = 4 + (1 - safeH) * 14;   // taller → lower topY
-  const bottomY = 60;
+  // Vertical extents — lip y scales visibly with h
+  const lipY    = thrown2LipY(safeH);   // h=0 → 34, h=1 → 6
+  const bottomY = THROWN2_FOOT_Y;       // foot always near bottom (y≈58)
 
-  const N = widths.length; // number of bands (3..6)
+  const N = widths.length; // number of bands (2..6)
 
   // Compute Y positions for each band (evenly distributed foot→lip)
-  // Band 0 = foot (bottomY), Band N-1 = lip (topY)
+  // Band 0 = foot (bottomY), Band N-1 = lip (lipY)
   const bandY: number[] = [];
   for (let i = 0; i < N; i++) {
     const t = i / (N - 1);
-    bandY.push(bottomY - t * (bottomY - topY)); // bottom to top
+    bandY.push(bottomY - t * (bottomY - lipY)); // bottom to top
   }
 
   // Compute right-side X positions (half-widths clamped)
-  // min half-width ~3.2 (10% of 32), max ~30.4 (95%)
+  // min half-width ~3.2 (10% of 32), max ~28 (87.5%)
   const MIN_HW = 3.2;
-  const MAX_HW = 30.4;
-  const rightX: number[] = widths.map((w, i) => {
+  const MAX_HW = 28.0;
+  const rightX: number[] = widths.map((w) => {
     const hw = MIN_HW + clamp01(w) * (MAX_HW - MIN_HW);
-    // Foot gets a bit of extra stability — ensure foot isn't wider than belly
     return 32 + hw;
   });
 
@@ -492,13 +510,75 @@ export function buildThrown2Path(h: number, widths: number[]): string {
   const lipRightX = rightX[N - 1] + lipFlare;
   const lipLeftX  = 32 - (lipRightX - 32);
 
-  // Build the right-side profile using Catmull-Rom → cubic bézier
-  // Points array for the right side (from foot to lip)
+  // Build the right-side profile points
   interface Pt { x: number; y: number }
   const rightPts: Pt[] = rightX.map((rx, i) => ({
     x: i === N - 1 ? lipRightX : rx,
     y: bandY[i],
   }));
+
+  // Build left-side profile: mirror of right, from lip → foot
+  const leftPts: Pt[] = rightPts.map((pt) => ({ x: 64 - pt.x, y: pt.y })).reverse();
+  leftPts[0] = { x: lipLeftX, y: bandY[N - 1] };
+
+  const footY = bandY[0];
+  const rFoot = rightPts[0].x;
+
+  if (edge === "straight") {
+    // Faceted profile: straight lines between stops with small corner eases (~1.5px).
+    // Pattern: from current position, straight line to (corner - r), then Q through corner to (corner + r in next direction).
+    // This reads as a deliberate angular/carved pot — still cute, never razor-sharp.
+    const r = 1.5;
+
+    /** Build segments for a polyline with rounded corners (skip rounding at first/last points). */
+    function facetedSegments(pts: Pt[]): string[] {
+      const segs: string[] = [];
+      const M = pts.length;
+      for (let i = 0; i < M - 1; i++) {
+        const cur  = pts[i];
+        const next = pts[i + 1];
+        const dx = next.x - cur.x;
+        const dy = next.y - cur.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const ux = dx / dist;
+        const uy = dy / dist;
+
+        if (i === M - 2) {
+          // Last segment: go straight to the end point (no exit rounding needed — lip/foot handle closure)
+          segs.push(`L ${p(next.x)} ${p(next.y)}`);
+        } else {
+          // Go straight to just before the next corner
+          segs.push(`L ${p(next.x - ux * r)} ${p(next.y - uy * r)}`);
+          // Peek at direction to the point after next
+          const nn = pts[i + 2];
+          const dx2 = nn.x - next.x;
+          const dy2 = nn.y - next.y;
+          const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2) || 1;
+          const ux2 = dx2 / dist2;
+          const uy2 = dy2 / dist2;
+          // Round the corner: Q through the corner point, exit r along next direction
+          segs.push(`Q ${p(next.x)} ${p(next.y)}, ${p(next.x + ux2 * r)} ${p(next.y + uy2 * r)}`);
+        }
+      }
+      return segs;
+    }
+
+    const rightSegs = facetedSegments(rightPts);
+    const leftSegs  = facetedSegments(leftPts);
+
+    return [
+      `M ${p(rFoot)} ${p(footY)}`,
+      ...rightSegs,
+      // Lip top — slight flat arc
+      `Q 32 ${p(lipY - 1.5)}, ${p(lipLeftX)} ${p(lipY)}`,
+      ...leftSegs,
+      // Close along foot
+      `Q 32 ${p(footY + 1.5)}, ${p(rFoot)} ${p(footY)}`,
+      "Z",
+    ].join(" ");
+  }
+
+  // ── round: Catmull-Rom → cubic bézier ────────────────────────────────────
 
   // Catmull-Rom to cubic Bezier conversion for a chain of points
   // We add phantom endpoints to make the ends feel natural
@@ -536,12 +616,6 @@ export function buildThrown2Path(h: number, widths: number[]): string {
     );
   }
 
-  // Build left-side profile: mirror of right, from lip → foot
-  // We reverse the points and mirror around x=32
-  const leftPts: Pt[] = rightPts.map((pt) => ({ x: 64 - pt.x, y: pt.y })).reverse();
-  // Lip left has the flare
-  leftPts[0] = { x: lipLeftX, y: bandY[N - 1] };
-
   const phantomL0: Pt = {
     x: leftPts[0].x - (leftPts[1].x - leftPts[0].x),
     y: leftPts[0].y - (leftPts[1].y - leftPts[0].y),
@@ -559,11 +633,6 @@ export function buildThrown2Path(h: number, widths: number[]): string {
       `C ${p(cp1.x)} ${p(cp1.y)}, ${p(cp2.x)} ${p(cp2.y)}, ${p(allLeftPts[i + 2].x)} ${p(allLeftPts[i + 2].y)}`
     );
   }
-
-  const footY  = bandY[0];
-  const rFoot  = rightPts[0].x;
-  const lFoot  = leftPts[N - 1].x;
-  const lipY   = bandY[N - 1];
 
   return [
     // Start at right foot

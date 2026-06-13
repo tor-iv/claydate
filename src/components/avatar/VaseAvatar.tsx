@@ -6,8 +6,10 @@ import {
   parseShape,
   buildThrownPath,
   buildThrown2Path,
+  thrown2LipY,
+  THROWN2_FOOT_Y,
 } from "@/lib/avatars";
-import type { AvatarShape, AvatarGlaze, AvatarPattern, FaceId, ThrownParams } from "@/lib/avatars";
+import type { AvatarShape, AvatarGlaze, AvatarPattern, FaceId, ThrownParams, EdgeStyle } from "@/lib/avatars";
 
 interface VaseAvatarProps {
   shape?: AvatarShape | string;
@@ -181,9 +183,10 @@ function getFacePosition(
   }
   if (kind === "thrown2" && thrown2) {
     const { h, widths } = thrown2;
-    const topY = 4 + (1 - h) * 14;
-    const bottomY = 60;
-    // Place face near the widest band in the upper third
+    // Use the actual lip/foot ys from the path builder helpers
+    const lipY = thrown2LipY(h);    // h=0 → 34, h=1 → 6
+    const footY = THROWN2_FOOT_Y;  // 58
+    // Place face near the widest band in the upper portion
     const N = widths.length;
     const upperThirdEnd = Math.ceil(N * 0.67);
     let maxW = -1;
@@ -192,8 +195,8 @@ function getFacePosition(
       if (widths[i] > maxW) { maxW = widths[i]; maxIdx = i; }
     }
     const t = maxIdx / (N - 1);
-    // bandY at maxIdx: bottomY - t*(bottomY-topY)
-    const faceY = bottomY - t * (bottomY - topY);
+    // bandY at maxIdx: footY - t*(footY-lipY)
+    const faceY = footY - t * (footY - lipY);
     const avgWidth = widths.reduce((a, b) => a + b, 0) / widths.length;
     const scale = 0.5 + avgWidth * 0.4;
     return { cx: 32, cy: faceY, scale };
@@ -218,7 +221,7 @@ export default function VaseAvatar({
   const vasePath = isThrownShape
     ? buildThrownPath(parsed.params)
     : isThrown2Shape
-      ? buildThrown2Path(parsed.h, parsed.widths)
+      ? buildThrown2Path(parsed.h, parsed.widths, parsed.edge)
       : getShape(parsed.id).path;
 
   const glazeData  = getGlaze(glazeProp  ?? "terracotta");

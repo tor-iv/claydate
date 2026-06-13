@@ -34,7 +34,7 @@ function validShape(id: string): AvatarShape {
   if (id.startsWith("thrown2:")) {
     const parsed = parseShape(id);
     if (parsed.kind === "thrown2") {
-      return encodeThrown2Shape(parsed.h, parsed.widths, parsed.face) as AvatarShape;
+      return encodeThrown2Shape(parsed.h, parsed.widths, parsed.face, parsed.edge) as AvatarShape;
     }
   }
   return DEFAULT_AVATAR.shape;
