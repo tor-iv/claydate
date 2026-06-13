@@ -3,9 +3,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { mkdirSync } from "fs";
 import { dirname } from "path";
 import * as schema from "./schema";
-
-const DB_PATH = process.env.DB_PATH ?? "./data/claydate.db";
-const UPLOAD_DIR = process.env.DATA_DIR ?? "./data/uploads";
+import { DB_PATH, UPLOAD_DIR } from "../lib/constants";
 
 // Ensure data directories exist on startup
 mkdirSync(dirname(DB_PATH), { recursive: true });
@@ -86,7 +84,4 @@ const globalForDb = globalThis as typeof globalThis & {
 };
 
 export const db = globalForDb._claydateDb ?? createDb();
-
-if (process.env.NODE_ENV !== "production") {
-  globalForDb._claydateDb = db;
-}
+globalForDb._claydateDb = db;

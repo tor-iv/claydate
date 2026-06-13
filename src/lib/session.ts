@@ -40,10 +40,7 @@ export async function getSession() {
   return getIronSession<SessionData>(await cookies(), sessionOptions);
 }
 
-export async function getCurrentUser(): Promise<{
-  userId: string;
-  userName: string;
-} | null> {
+export async function getCurrentUser(): Promise<SessionData | null> {
   const session = await getSession();
   if (!session.userId || !session.userName) {
     return null;

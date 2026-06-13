@@ -1,13 +1,16 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+// Type-only import (erased at runtime) so this file stays runnable via plain
+// `node src/db/seed.ts`; canonical avatar option lists live in lib/avatars.ts
+import type { AvatarShape, AvatarGlaze, AvatarPattern } from "../lib/avatars.ts";
 
 export const users = sqliteTable(
   "users",
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
-    avatar_shape: text("avatar_shape").notNull(),
-    avatar_glaze: text("avatar_glaze").notNull(),
-    avatar_pattern: text("avatar_pattern").notNull(),
+    avatar_shape: text("avatar_shape").$type<AvatarShape>().notNull(),
+    avatar_glaze: text("avatar_glaze").$type<AvatarGlaze>().notNull(),
+    avatar_pattern: text("avatar_pattern").$type<AvatarPattern>().notNull(),
     created_at: integer("created_at").notNull(),
   },
   (t) => [index("users_name_idx").on(t.name)]

@@ -83,15 +83,15 @@ await db.insert(schema.users).values([
   {
     id: user1Id,
     name: "Maya",
-    avatar_shape: "round",
-    avatar_glaze: "sky",
+    avatar_shape: "round-belly",
+    avatar_glaze: "celadon",
     avatar_pattern: "dots",
     created_at: now,
   },
   {
     id: user2Id,
     name: "Jordan",
-    avatar_shape: "cylinder",
+    avatar_shape: "tall-slim",
     avatar_glaze: "terracotta",
     avatar_pattern: "stripes",
     created_at: now,
