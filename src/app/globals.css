@@ -119,6 +119,35 @@ h1, h2, h3, h4, h5, h6 {
   border-radius: 50%;
 }
 
+/* ── HandInput notebook underline ───────────────────────────────────────── */
+.hand-input {
+  font-family: var(--font-body);
+  background: transparent;
+  color: #2C1810;
+  border: none;
+  border-bottom: 2px dashed rgba(44, 24, 16, 0.45);
+  border-radius: 0;
+  outline: none;
+  padding: 6px 2px;
+  width: 100%;
+  font-size: 1rem;
+  line-height: 1.5;
+  transition: border-color 0.15s ease;
+}
+
+.hand-input::placeholder {
+  color: rgba(92, 61, 46, 0.45);
+}
+
+.hand-input:focus {
+  border-bottom: 2.5px solid #B85C2A;
+}
+
+textarea.hand-input {
+  resize: vertical;
+  min-height: 80px;
+}
+
 /* ── Scrollbar ───────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: #E8D5B0; }

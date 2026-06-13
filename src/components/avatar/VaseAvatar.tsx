@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { getShape, getGlaze, getPattern } from "@/lib/avatars";
 import type { AvatarShape, AvatarGlaze, AvatarPattern } from "@/lib/avatars";
 
@@ -44,7 +45,10 @@ export default function VaseAvatar({
   const glazeData  = getGlaze(glazeProp  ?? "terracotta");
   const patternId  = (patternProp ?? "plain") as AvatarPattern;
 
-  const uid = `${shapeData.id}-${glazeData.id}-${patternId}-${size}`;
+  // useId guarantees document-unique, SSR/hydration-stable ids even when the
+  // same shape/glaze/pattern combo renders multiple times on one page.
+  // Strip the delimiter chars (e.g. «r1» / :r1:) — they break url(#...) refs.
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const clipId = `clip-${uid}`;
   const patId  = `pat-${uid}`;
 

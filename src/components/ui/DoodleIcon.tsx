@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 export type DoodleName = "pot" | "star" | "squiggle" | "flame" | "leaf" | "sparkle";
 
 interface DoodleIconProps {
@@ -14,7 +16,7 @@ export default function DoodleIcon({
   className = "",
   color = "#2C1810",
 }: DoodleIconProps) {
-  const paths: Record<DoodleName, React.ReactNode> = {
+  const paths: Record<DoodleName, ReactNode> = {
     pot: (
       // Cute little pottery pot
       <g fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
