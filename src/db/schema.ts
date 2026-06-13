@@ -1,4 +1,5 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
 // Type-only import (erased at runtime) so this file stays runnable via plain
 // `node src/db/seed.ts`; canonical avatar option lists live in lib/avatars.ts
 import type { AvatarShape, AvatarGlaze, AvatarPattern } from "../lib/avatars.ts";
@@ -13,7 +14,11 @@ export const users = sqliteTable(
     avatar_pattern: text("avatar_pattern").$type<AvatarPattern>().notNull(),
     created_at: integer("created_at").notNull(),
   },
-  (t) => [index("users_name_idx").on(t.name)]
+  (t) => [
+    index("users_name_idx").on(t.name),
+    // Names are identity here — forbid case-insensitive duplicates at the DB level
+    uniqueIndex("users_name_ci_uniq").on(sql`lower(${t.name})`),
+  ]
 );
 
 export const meetups = sqliteTable(

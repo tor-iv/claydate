@@ -60,8 +60,11 @@ export default async function RootLayout({
       }
       // If rows.length === 0, userId is stale (deleted DB row) — treat as logged out
     }
-  } catch {
-    // Session or DB error — render as logged out rather than crashing the layout
+  } catch (e) {
+    // Session or DB error — render as logged out rather than crashing the
+    // layout, but log it: silent failures here look like "I keep getting
+    // logged out" with no trace
+    console.error("RootLayout: failed to resolve session user", e);
     headerUser = null;
   }
 

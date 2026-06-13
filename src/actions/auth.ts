@@ -32,11 +32,17 @@ function validPattern(id: string): AvatarPattern {
     : DEFAULT_AVATAR.pattern;
 }
 
+// Only allow internal paths as post-login destinations (no open redirects)
+function safeNext(raw: string): string {
+  return raw.startsWith("/") && !raw.startsWith("//") ? raw : "/calendar";
+}
+
 export async function loginAction(formData: FormData): Promise<void> {
   const rawName = (formData.get("name") ?? "").toString().trim();
   const rawShape = (formData.get("avatarShape") ?? "").toString();
   const rawGlaze = (formData.get("avatarGlaze") ?? "").toString();
   const rawPattern = (formData.get("avatarPattern") ?? "").toString();
+  const nextPath = safeNext((formData.get("next") ?? "").toString());
 
   // Validate name — redirect back with error message as searchParam
   if (!rawName) {
@@ -84,14 +90,27 @@ export async function loginAction(formData: FormData): Promise<void> {
     // Create new user
     userId = nanoid();
     userName = rawName;
-    await db.insert(users).values({
-      id: userId,
-      name: userName,
-      avatar_shape: avatarShape,
-      avatar_glaze: avatarGlaze,
-      avatar_pattern: avatarPattern,
-      created_at: Date.now(),
-    });
+    try {
+      await db.insert(users).values({
+        id: userId,
+        name: userName,
+        avatar_shape: avatarShape,
+        avatar_glaze: avatarGlaze,
+        avatar_pattern: avatarPattern,
+        created_at: Date.now(),
+      });
+    } catch {
+      // Unique index on lower(name) fired: someone created this name between
+      // our select and insert. Log into the row that won the race.
+      const winner = await db
+        .select()
+        .from(users)
+        .where(sql`lower(${users.name}) = ${rawName.toLowerCase()}`)
+        .limit(1);
+      if (winner.length === 0) throw new Error("login failed — please retry");
+      userId = winner[0].id;
+      userName = winner[0].name;
+    }
   }
 
   // Set session
@@ -100,11 +119,12 @@ export async function loginAction(formData: FormData): Promise<void> {
   session.userName = userName;
   await session.save();
 
-  redirect("/calendar");
+  redirect(nextPath);
 }
 
 export async function logoutAction(): Promise<void> {
   const session = await getSession();
+  // destroy() is synchronous; the cleared cookie goes out on the redirect response
   session.destroy();
   redirect("/login");
 }

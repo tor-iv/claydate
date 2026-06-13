@@ -8,7 +8,7 @@ import DoodleIcon from "@/components/ui/DoodleIcon";
 import AvatarBuilder from "@/components/avatar/AvatarBuilder";
 
 interface LoginPageProps {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; next?: string }>;
 }
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
@@ -17,7 +17,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     redirect("/calendar");
   }
 
-  const { error } = await searchParams;
+  const { error, next } = await searchParams;
 
   // my-auto on the child (not justify-center) so tall content is never clipped off-screen top
   return (
@@ -50,6 +50,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
         <WobblyCard>
           <form action={loginAction} className="flex flex-col gap-6">
+            {/* Carry the pre-login destination through the form */}
+            {next && <input type="hidden" name="next" value={next} />}
             {/* Error message */}
             {error && (
               <p

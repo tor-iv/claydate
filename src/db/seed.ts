@@ -28,6 +28,7 @@ sqlite.exec(`
     created_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS users_name_idx ON users (name);
+  CREATE UNIQUE INDEX IF NOT EXISTS users_name_ci_uniq ON users (lower(name));
 
   CREATE TABLE IF NOT EXISTS meetups (
     id TEXT PRIMARY KEY,

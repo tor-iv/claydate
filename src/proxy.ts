@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// Public paths that don't require a session cookie
-const PUBLIC_PATHS = ["/login", "/design"];
+// Public paths that don't require a session cookie.
+// /design is the component QA gallery — public in dev, login-only in production.
+const PUBLIC_PATHS =
+  process.env.NODE_ENV === "production" ? ["/login"] : ["/login", "/design"];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -23,6 +25,11 @@ export function proxy(request: NextRequest) {
   const hasSession = request.cookies.has("claydate-session");
   if (!hasSession) {
     const loginUrl = new URL("/login", request.url);
+    // Preserve the intended destination so login can return the user there
+    const next = pathname + request.nextUrl.search;
+    if (next !== "/") {
+      loginUrl.searchParams.set("next", next);
+    }
     return NextResponse.redirect(loginUrl);
   }
 
