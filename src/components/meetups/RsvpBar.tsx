@@ -36,9 +36,8 @@ function applyOptimistic(
   newStatus: RsvpStatus,
   myInfo: UserInfo | null
 ): OptimisticState {
-  const prev = state.myStatus;
-
-  // Remove user from all groups first
+  // Dedup by name is safe: users_name_ci_uniq makes names globally unique.
+  // Revisit if name changes are ever allowed.
   const clean: GroupedRsvps = {
     yes: state.grouped.yes.filter((u) => u.name !== myInfo?.name),
     no: state.grouped.no.filter((u) => u.name !== myInfo?.name),
@@ -105,7 +104,13 @@ export default function RsvpBar({
   function handleRsvp(status: RsvpStatus) {
     startTransition(async () => {
       setOptimistic(status);
-      await upsertRsvpAction(meetupId, status);
+      try {
+        await upsertRsvpAction(meetupId, status);
+      } catch (e) {
+        // useOptimistic reverts to server state when the transition settles;
+        // swallow so a transient error doesn't crash the tree
+        console.error("RSVP failed", e);
+      }
     });
   }
 

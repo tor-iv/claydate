@@ -45,7 +45,8 @@ export default function CommentThread({ meetupId, comments }: CommentThreadProps
           </p>
         ) : (
           comments.map((c, i) => (
-            <div key={i}>
+            // created_at + name is stable & unique enough (names are globally unique)
+            <div key={`${c.created_at}-${c.name}`}>
               {/* Comment entry */}
               <div className="flex items-start gap-3 py-3">
                 <VaseAvatar
@@ -109,6 +110,7 @@ export default function CommentThread({ meetupId, comments }: CommentThreadProps
         <HandInput
           as="textarea"
           name="body"
+          label="your comment"
           placeholder="say something nice ☁️"
           maxLength={500}
           rows={2}

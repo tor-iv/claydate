@@ -140,7 +140,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .hand-input:focus {
-  border-bottom: 2.5px solid #B85C2A;
+  border-bottom: 2.5px solid var(--color-clay-rust);
 }
 
 textarea.hand-input {
@@ -155,5 +155,10 @@ textarea.hand-input {
 
 /* ── Scrollbar ───────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #E8D5B0; }
-::-webkit-scrollbar-thumb { background: #B85C2A; border-radius: 3px; }
+::-webkit-scrollbar-track { background: var(--color-clay-warm); }
+::-webkit-scrollbar-thumb { background: var(--color-clay-rust); border-radius: 3px; }
+
+.day-cell-link:focus-visible {
+  outline: 2px solid var(--color-clay-rust);
+  outline-offset: 1px;
+}

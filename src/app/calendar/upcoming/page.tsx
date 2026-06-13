@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { gte, asc } from "drizzle-orm";
+import { gte, asc, and, inArray, eq } from "drizzle-orm";
 import { count as sqlCount } from "drizzle-orm/sql/functions";
-import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { meetups, rsvps } from "@/db/schema";
 import { todayISO } from "@/lib/dates";
@@ -82,32 +81,36 @@ export default async function UpcomingPage() {
   // 2) Aggregate RSVP counts for those meetups
   const meetupIds = upcomingMeetups.map((m) => m.id);
 
-  // Two simple queries — merge in JS (this is a friends app)
-  const yesCounts = await db
-    .select({
-      meetupId: rsvps.meetup_id,
-      n: sqlCount(rsvps.id),
-    })
-    .from(rsvps)
-    .where(eq(rsvps.status, "yes"))
-    .groupBy(rsvps.meetup_id);
+  // Two simple queries scoped to the visible meetups — merge in JS
+  const yesCounts = meetupIds.length
+    ? await db
+        .select({
+          meetupId: rsvps.meetup_id,
+          n: sqlCount(rsvps.id),
+        })
+        .from(rsvps)
+        .where(and(eq(rsvps.status, "yes"), inArray(rsvps.meetup_id, meetupIds)))
+        .groupBy(rsvps.meetup_id)
+    : [];
 
-  const maybeCounts = await db
-    .select({
-      meetupId: rsvps.meetup_id,
-      n: sqlCount(rsvps.id),
-    })
-    .from(rsvps)
-    .where(eq(rsvps.status, "maybe"))
-    .groupBy(rsvps.meetup_id);
+  const maybeCounts = meetupIds.length
+    ? await db
+        .select({
+          meetupId: rsvps.meetup_id,
+          n: sqlCount(rsvps.id),
+        })
+        .from(rsvps)
+        .where(and(eq(rsvps.status, "maybe"), inArray(rsvps.meetup_id, meetupIds)))
+        .groupBy(rsvps.meetup_id)
+    : [];
 
   const yesMap: Record<string, number> = {};
   for (const row of yesCounts) {
-    if (meetupIds.includes(row.meetupId)) yesMap[row.meetupId] = row.n;
+    yesMap[row.meetupId] = row.n;
   }
   const maybeMap: Record<string, number> = {};
   for (const row of maybeCounts) {
-    if (meetupIds.includes(row.meetupId)) maybeMap[row.meetupId] = row.n;
+    maybeMap[row.meetupId] = row.n;
   }
 
   return (
