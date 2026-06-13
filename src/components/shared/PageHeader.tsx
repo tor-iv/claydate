@@ -3,6 +3,7 @@ import DoodleIcon from "@/components/ui/DoodleIcon";
 import UserTag from "./UserTag";
 import NavLinks from "./NavLinks";
 import { logoutAction } from "@/actions/auth";
+import { canEdit } from "@/lib/session";
 import type { AvatarShape, AvatarGlaze, AvatarPattern } from "@/lib/avatars";
 
 export interface PageHeaderUser {
@@ -10,6 +11,7 @@ export interface PageHeaderUser {
   avatarShape: AvatarShape | string;
   avatarGlaze: AvatarGlaze | string;
   avatarPattern: AvatarPattern | string;
+  role?: "friend" | "guest";
 }
 
 interface PageHeaderProps {
@@ -17,6 +19,8 @@ interface PageHeaderProps {
 }
 
 export default function PageHeader({ user = null }: PageHeaderProps) {
+  const isFriend = canEdit(user?.role);
+
   return (
     <header
       className="flex flex-wrap items-center justify-between gap-y-2 px-4 py-3 sm:px-6 sm:py-4"
@@ -59,12 +63,30 @@ export default function PageHeader({ user = null }: PageHeaderProps) {
       </Link>
 
       {/* Nav — active state computed client-side via usePathname */}
-      <NavLinks />
+      <NavLinks showNewMeetup={!!user && isFriend} />
 
       {/* User / right side */}
       <div className="flex items-center gap-2">
         {user ? (
           <>
+            {/* Guest mode pill — only visible to guests */}
+            {!isFriend && (
+              <span
+                style={{
+                  fontFamily: "var(--font-hand)",
+                  fontSize: "0.78rem",
+                  color: "#5C3D2E",
+                  background: "rgba(232,213,176,0.8)",
+                  border: "1.5px solid rgba(44,24,16,0.25)",
+                  borderRadius: "999px",
+                  padding: "2px 9px",
+                  lineHeight: 1.5,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                👀 guest
+              </span>
+            )}
             <UserTag user={user} />
             <form action={logoutAction}>
               <button

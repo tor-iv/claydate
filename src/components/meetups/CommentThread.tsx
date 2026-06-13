@@ -18,11 +18,12 @@ export interface CommentEntry extends CommentUser {
 interface CommentThreadProps {
   meetupId: string;
   comments: CommentEntry[];
+  canEdit?: boolean;
 }
 
 import { formatShortEpoch } from "@/lib/dates";
 
-export default function CommentThread({ meetupId, comments }: CommentThreadProps) {
+export default function CommentThread({ meetupId, comments, canEdit = true }: CommentThreadProps) {
   const boundAction = addCommentAction.bind(null, meetupId);
 
   return (
@@ -101,22 +102,35 @@ export default function CommentThread({ meetupId, comments }: CommentThreadProps
         )}
       </div>
 
-      {/* Post comment form */}
-      <form action={boundAction} className="flex flex-col gap-3">
-        <HandInput
-          as="textarea"
-          name="body"
-          label="your comment"
-          placeholder="say something nice ☁️"
-          maxLength={500}
-          rows={2}
-        />
-        <div className="flex justify-end">
-          <InkButton type="submit" variant="soft" className="px-4 py-2 text-sm">
-            post it
-          </InkButton>
-        </div>
-      </form>
+      {/* Post comment form (friends) or guest note */}
+      {canEdit ? (
+        <form action={boundAction} className="flex flex-col gap-3">
+          <HandInput
+            as="textarea"
+            name="body"
+            label="your comment"
+            placeholder="say something nice ☁️"
+            maxLength={500}
+            rows={2}
+          />
+          <div className="flex justify-end">
+            <InkButton type="submit" variant="soft" className="px-4 py-2 text-sm">
+              post it
+            </InkButton>
+          </div>
+        </form>
+      ) : (
+        <p
+          style={{
+            fontFamily: "var(--font-body)",
+            fontSize: "0.92rem",
+            color: "var(--color-clay-ink-muted)",
+            fontStyle: "italic",
+          }}
+        >
+          friends can leave comments — ask for the password 🤫
+        </p>
+      )}
     </div>
   );
 }

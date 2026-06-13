@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { meetups, rsvps } from "@/db/schema";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser, canEdit } from "@/lib/session";
 
 const VALID_STATUSES = ["yes", "no", "maybe"] as const;
 type RsvpStatus = (typeof VALID_STATUSES)[number];
@@ -18,6 +18,9 @@ export async function upsertRsvpAction(
   const user = await getCurrentUser();
   if (!user) {
     redirect("/login");
+  }
+  if (!canEdit(user.role)) {
+    return;
   }
 
   // Validate status against the literal union at runtime

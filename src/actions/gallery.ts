@@ -6,7 +6,7 @@ import { unlink } from "fs/promises";
 import { join } from "path";
 import { db } from "@/db";
 import { gallery_photos } from "@/db/schema";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser, canEdit } from "@/lib/session";
 import { UPLOAD_DIR } from "@/lib/constants";
 
 /**
@@ -21,6 +21,9 @@ export async function deletePhotoAction(photoId: string): Promise<void> {
   const user = await getCurrentUser();
   if (!user) {
     // Not logged in — silently no-op (UI should not show the button)
+    return;
+  }
+  if (!canEdit(user.role)) {
     return;
   }
 

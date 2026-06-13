@@ -5,6 +5,13 @@ import type { SessionOptions } from "iron-session";
 export interface SessionData {
   userId: string;
   userName: string;
+  role?: "friend" | "guest";
+}
+
+/** Returns true if the given role has write access (create meetups, RSVP, comment, upload). */
+export function canEdit(role: "friend" | "guest" | undefined): boolean {
+  // Treat missing/unknown role as "friend" so existing sessions are grandfathered.
+  return role !== "guest";
 }
 
 function resolveSecret(): string {
@@ -45,5 +52,7 @@ export async function getCurrentUser(): Promise<SessionData | null> {
   if (!session.userId || !session.userName) {
     return null;
   }
-  return { userId: session.userId, userName: session.userName };
+  // Backward-compat: existing cookies have no role field — treat as "friend"
+  const role: "friend" | "guest" = session.role ?? "friend";
+  return { userId: session.userId, userName: session.userName, role };
 }

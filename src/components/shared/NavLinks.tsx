@@ -3,18 +3,25 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const NAV_LINKS = [
+interface NavLinksProps {
+  showNewMeetup?: boolean;
+}
+
+const BASE_NAV_LINKS = [
   { href: "/calendar",          label: "Calendar" },
   { href: "/calendar/upcoming", label: "Upcoming" },
-  { href: "/meetups/new",       label: "New Meetup" },
 ];
 
-export default function NavLinks() {
+const NEW_MEETUP_LINK = { href: "/meetups/new", label: "New Meetup" };
+
+export default function NavLinks({ showNewMeetup = true }: NavLinksProps) {
   const pathname = usePathname();
+
+  const links = showNewMeetup ? [...BASE_NAV_LINKS, NEW_MEETUP_LINK] : BASE_NAV_LINKS;
 
   return (
     <nav className="order-3 w-full md:order-none md:w-auto flex items-center justify-center gap-1">
-      {NAV_LINKS.map((link) => {
+      {links.map((link) => {
         // Exact-match: /calendar matches /calendar, /calendar/upcoming matches /calendar/upcoming
         const isActive = pathname === link.href;
         return (

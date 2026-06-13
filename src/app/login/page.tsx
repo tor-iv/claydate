@@ -44,7 +44,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               color: "var(--color-clay-ink-muted)",
             }}
           >
-            just enter your name to hop in
+            enter your name + the secret password
           </p>
         </div>
 
@@ -89,6 +89,39 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                 autoComplete="nickname"
                 style={{ fontSize: "1.1rem" }}
               />
+            </div>
+
+            {/* Passcode field */}
+            <div className="flex flex-col gap-1">
+              <label
+                htmlFor="login-passcode"
+                style={{
+                  fontFamily: "var(--font-hand)",
+                  fontSize: "1.1rem",
+                  color: "#2C1810",
+                }}
+              >
+                secret password 🤫
+              </label>
+              <HandInput
+                id="login-passcode"
+                name="passcode"
+                type="text"
+                placeholder="secret password 🤫"
+                required
+                autoComplete="off"
+                style={{ fontSize: "1.1rem" }}
+              />
+              <p
+                style={{
+                  fontFamily: "var(--font-body)",
+                  fontSize: "0.82rem",
+                  color: "var(--color-clay-ink-muted)",
+                  marginTop: "2px",
+                }}
+              >
+                ask a friend for the password
+              </p>
             </div>
 
             {/* Primary action — name + one tap is all you need */}

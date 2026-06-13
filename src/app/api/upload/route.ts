@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { meetups, gallery_photos } from "@/db/schema";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser, canEdit } from "@/lib/session";
 import { MAX_FILE_BYTES } from "@/lib/constants";
 import { saveUploadedImage, UnsupportedFormatError } from "@/lib/image";
 
@@ -13,6 +13,9 @@ export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+  if (!canEdit(user.role)) {
+    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
 
   let formData: FormData;

@@ -38,6 +38,7 @@ export default async function RootLayout({
     avatarShape: string;
     avatarGlaze: string;
     avatarPattern: string;
+    role?: "friend" | "guest";
   } | null = null;
 
   try {
@@ -56,6 +57,7 @@ export default async function RootLayout({
           avatarShape: row.avatar_shape,
           avatarGlaze: row.avatar_glaze,
           avatarPattern: row.avatar_pattern,
+          role: sessionUser.role,
         };
       }
       // If rows.length === 0, userId is stale (deleted DB row) — treat as logged out

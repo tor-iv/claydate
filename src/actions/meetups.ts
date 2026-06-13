@@ -5,13 +5,16 @@ import { revalidatePath } from "next/cache";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { meetups, rsvps } from "@/db/schema";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser, canEdit } from "@/lib/session";
 import { DEFAULT_LOCATION } from "@/lib/constants";
 
 export async function createMeetupAction(formData: FormData): Promise<void> {
   const user = await getCurrentUser();
   if (!user) {
     redirect("/login");
+  }
+  if (!canEdit(user.role)) {
+    redirect("/calendar");
   }
 
   const rawTitle = (formData.get("title") ?? "").toString().trim();

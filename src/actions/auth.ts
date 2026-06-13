@@ -6,6 +6,7 @@ import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { getSession } from "@/lib/session";
+import { FRIEND_PASSCODE, GUEST_PASSCODE } from "@/lib/constants";
 import {
   AVATAR_SHAPES,
   AVATAR_GLAZES,
@@ -63,6 +64,20 @@ export async function loginAction(formData: FormData): Promise<void> {
   const rawGlaze = (formData.get("avatarGlaze") ?? "").toString();
   const rawPattern = (formData.get("avatarPattern") ?? "").toString();
   const nextPath = safeNext((formData.get("next") ?? "").toString());
+
+  // Check passcode BEFORE touching the DB — wrong password must never log anyone in
+  const submittedCode = (formData.get("passcode") ?? "").toString().trim().toLowerCase();
+  let role: "friend" | "guest";
+  if (submittedCode === FRIEND_PASSCODE) {
+    role = "friend";
+  } else if (submittedCode === GUEST_PASSCODE) {
+    role = "guest";
+  } else {
+    redirect(
+      "/login?error=" +
+        encodeURIComponent("that's not the password — ask a friend 🤫")
+    );
+  }
 
   // Validate name — redirect back with error message as searchParam
   if (!rawName) {
@@ -137,6 +152,7 @@ export async function loginAction(formData: FormData): Promise<void> {
   const session = await getSession();
   session.userId = userId;
   session.userName = userName;
+  session.role = role;
   await session.save();
 
   redirect(nextPath);

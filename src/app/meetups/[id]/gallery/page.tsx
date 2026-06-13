@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { eq, desc } from "drizzle-orm";
 import { db } from "@/db";
 import { meetups, gallery_photos, users } from "@/db/schema";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser, canEdit as canEditFn } from "@/lib/session";
 import WobblyCard from "@/components/ui/WobblyCard";
 import PhotoUploader from "@/components/gallery/PhotoUploader";
 import GalleryGrid from "@/components/gallery/GalleryGrid";
@@ -62,6 +62,7 @@ export default async function GalleryPage({ params }: GalleryPageProps) {
 
   const currentUser = await getCurrentUser();
   const currentUserId = currentUser?.userId;
+  const userCanEdit = canEditFn(currentUser?.role);
 
   return (
     <main className="flex flex-col items-center px-4 py-8 sm:py-12 min-h-screen">
@@ -95,8 +96,8 @@ export default async function GalleryPage({ params }: GalleryPageProps) {
           what we made @ {meetup.title}
         </h1>
 
-        {/* Upload section */}
-        {currentUser && (
+        {/* Upload section — friends only */}
+        {currentUser && userCanEdit && (
           <WobblyCard tone="warm" className="mb-6">
             <h2
               className="mb-4"
@@ -109,6 +110,21 @@ export default async function GalleryPage({ params }: GalleryPageProps) {
               share a photo 📸
             </h2>
             <PhotoUploader meetupId={id} />
+          </WobblyCard>
+        )}
+
+        {currentUser && !userCanEdit && (
+          <WobblyCard className="mb-6">
+            <p
+              style={{
+                fontFamily: "var(--font-body)",
+                fontSize: "0.92rem",
+                color: "var(--color-clay-ink-muted)",
+                fontStyle: "italic",
+              }}
+            >
+              friends can upload photos — ask for the password 🤫
+            </p>
           </WobblyCard>
         )}
 

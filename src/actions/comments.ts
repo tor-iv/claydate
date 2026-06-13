@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { meetups, comments } from "@/db/schema";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser, canEdit } from "@/lib/session";
 
 export async function addCommentAction(
   meetupId: string,
@@ -15,6 +15,9 @@ export async function addCommentAction(
   const user = await getCurrentUser();
   if (!user) {
     redirect("/login");
+  }
+  if (!canEdit(user.role)) {
+    return;
   }
 
   const body = (formData.get("body") ?? "").toString().trim();

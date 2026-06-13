@@ -24,6 +24,7 @@ interface RsvpBarProps {
   myStatus: RsvpStatus | null;
   myInfo: UserInfo | null;
   grouped: GroupedRsvps;
+  canEdit?: boolean;
 }
 
 type OptimisticState = {
@@ -93,6 +94,7 @@ export default function RsvpBar({
   myStatus,
   myInfo,
   grouped,
+  canEdit = true,
 }: RsvpBarProps) {
   const [isPending, startTransition] = useTransition();
 
@@ -118,37 +120,50 @@ export default function RsvpBar({
 
   return (
     <div className="flex flex-col gap-5">
-      {/* RSVP buttons */}
-      <div className="flex flex-wrap gap-2">
-        {BUTTON_CONFIG.map(({ status, label, emoji, selectedBg, selectedBorder }) => {
-          const isSelected = optimistic.myStatus === status;
-          return (
-            <button
-              key={status}
-              type="button"
-              disabled={isPending}
-              onClick={() => handleRsvp(status)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full transition-all duration-100 cursor-pointer select-none active:translate-y-[1px] disabled:opacity-60 disabled:cursor-not-allowed"
-              style={{
-                fontFamily: "var(--font-hand)",
-                fontSize: "1rem",
-                background: isSelected ? selectedBg : "transparent",
-                border: `2px solid ${selectedBorder}`,
-                color: "#2C1810",
-                boxShadow: isSelected
-                  ? "2px 3px 0px rgba(44,24,16,0.25)"
-                  : "1px 2px 0px rgba(44,24,16,0.12)",
-                transform: isSelected ? "translateY(-1px)" : undefined,
-                fontWeight: isSelected ? 700 : 400,
-              }}
-              aria-pressed={isSelected}
-            >
-              <span>{emoji}</span>
-              {label}
-            </button>
-          );
-        })}
-      </div>
+      {/* RSVP buttons (friends) or guest note */}
+      {canEdit ? (
+        <div className="flex flex-wrap gap-2">
+          {BUTTON_CONFIG.map(({ status, label, emoji, selectedBg, selectedBorder }) => {
+            const isSelected = optimistic.myStatus === status;
+            return (
+              <button
+                key={status}
+                type="button"
+                disabled={isPending}
+                onClick={() => handleRsvp(status)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full transition-all duration-100 cursor-pointer select-none active:translate-y-[1px] disabled:opacity-60 disabled:cursor-not-allowed"
+                style={{
+                  fontFamily: "var(--font-hand)",
+                  fontSize: "1rem",
+                  background: isSelected ? selectedBg : "transparent",
+                  border: `2px solid ${selectedBorder}`,
+                  color: "#2C1810",
+                  boxShadow: isSelected
+                    ? "2px 3px 0px rgba(44,24,16,0.25)"
+                    : "1px 2px 0px rgba(44,24,16,0.12)",
+                  transform: isSelected ? "translateY(-1px)" : undefined,
+                  fontWeight: isSelected ? 700 : 400,
+                }}
+                aria-pressed={isSelected}
+              >
+                <span>{emoji}</span>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p
+          style={{
+            fontFamily: "var(--font-body)",
+            fontSize: "0.92rem",
+            color: "var(--color-clay-ink-muted)",
+            fontStyle: "italic",
+          }}
+        >
+          friends can RSVP — ask for the password 🤫
+        </p>
+      )}
 
       {/* Guest lists */}
       <div className="flex flex-col gap-4">

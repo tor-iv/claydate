@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { eq, asc } from "drizzle-orm";
 import { db } from "@/db";
 import { meetups, rsvps, comments, users } from "@/db/schema";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser, canEdit as canEditFn } from "@/lib/session";
 import WobblyCard from "@/components/ui/WobblyCard";
 import DoodleIcon from "@/components/ui/DoodleIcon";
 import UserTag from "@/components/shared/UserTag";
@@ -83,6 +83,7 @@ export default async function MeetupDetailPage({ params }: MeetupDetailPageProps
 
   // Fetch current user and their RSVP status
   const currentUser = await getCurrentUser();
+  const userCanEdit = canEditFn(currentUser?.role);
   let myStatus: "yes" | "no" | "maybe" | null = null;
   let myInfo: UserInfo | null = null;
 
@@ -289,6 +290,7 @@ export default async function MeetupDetailPage({ params }: MeetupDetailPageProps
               myStatus={myStatus}
               myInfo={myInfo}
               grouped={grouped}
+              canEdit={userCanEdit}
             />
           ) : (
             <p
@@ -318,7 +320,7 @@ export default async function MeetupDetailPage({ params }: MeetupDetailPageProps
           >
             chatter 💬
           </h2>
-          <CommentThread meetupId={id} comments={commentEntries} />
+          <CommentThread meetupId={id} comments={commentEntries} canEdit={userCanEdit} />
         </WobblyCard>
 
         {/* Gallery link */}

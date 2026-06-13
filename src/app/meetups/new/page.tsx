@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser, canEdit } from "@/lib/session";
 import { createMeetupAction } from "@/actions/meetups";
 import { DEFAULT_LOCATION } from "@/lib/constants";
 import WobblyCard from "@/components/ui/WobblyCard";
 import InkButton from "@/components/ui/InkButton";
 import HandInput from "@/components/ui/HandInput";
 import DoodleIcon from "@/components/ui/DoodleIcon";
+import Link from "next/link";
 
 interface NewMeetupPageProps {
   searchParams: Promise<{ error?: string; date?: string; time?: string }>;
@@ -28,6 +29,56 @@ export default async function NewMeetupPage({ searchParams }: NewMeetupPageProps
   const user = await getCurrentUser();
   if (!user) {
     redirect("/login");
+  }
+
+  // Guests can view the page but see a friendly wall instead of the form
+  if (!canEdit(user.role)) {
+    return (
+      <main className="flex flex-col items-center min-h-screen px-4 py-8 sm:py-12">
+        <div className="w-full max-w-md mx-auto my-auto text-center">
+          <p style={{ fontSize: "3rem", marginBottom: "0.5rem" }} aria-hidden="true">🏺</p>
+          <h1
+            className="leading-tight mb-3"
+            style={{
+              fontFamily: "var(--font-hand)",
+              fontSize: "clamp(1.8rem, 6vw, 2.4rem)",
+              fontWeight: 700,
+              color: "#B85C2A",
+            }}
+          >
+            friends-only thing
+          </h1>
+          <WobblyCard>
+            <p
+              style={{
+                fontFamily: "var(--font-body)",
+                fontSize: "1rem",
+                color: "var(--color-clay-ink-muted)",
+                lineHeight: 1.65,
+                marginBottom: "1.25rem",
+              }}
+            >
+              planning pottery dates is for friends only 🏺{" "}
+              ask for the friends password to unlock this!
+            </p>
+            <Link
+              href="/calendar"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg"
+              style={{
+                fontFamily: "var(--font-hand)",
+                fontSize: "1rem",
+                color: "#2C1810",
+                background: "rgba(232,213,176,0.6)",
+                border: "2px solid rgba(44,24,16,0.3)",
+                textDecoration: "none",
+              }}
+            >
+              back to calendar
+            </Link>
+          </WobblyCard>
+        </div>
+      </main>
+    );
   }
 
   const { error, date: rawDate, time: rawTime } = await searchParams;
