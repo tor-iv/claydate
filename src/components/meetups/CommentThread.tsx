@@ -20,11 +20,7 @@ interface CommentThreadProps {
   comments: CommentEntry[];
 }
 
-/** Format epoch ms as "Jun 12" style — inline, no external import */
-function formatCommentDate(epochMs: number): string {
-  const d = new Date(epochMs);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
+import { formatShortEpoch } from "@/lib/dates";
 
 export default function CommentThread({ meetupId, comments }: CommentThreadProps) {
   const boundAction = addCommentAction.bind(null, meetupId);
@@ -63,7 +59,7 @@ export default function CommentThread({ meetupId, comments }: CommentThreadProps
                       style={{
                         fontFamily: "var(--font-hand)",
                         fontSize: "1rem",
-                        color: "#2C1810",
+                        color: "var(--color-clay-ink)",
                       }}
                     >
                       {c.name}
@@ -75,7 +71,7 @@ export default function CommentThread({ meetupId, comments }: CommentThreadProps
                         color: "rgba(92,61,46,0.5)",
                       }}
                     >
-                      {formatCommentDate(c.created_at)}
+                      {formatShortEpoch(c.created_at)}
                     </span>
                   </div>
                   <p

@@ -14,27 +14,33 @@ export default function PhotoUploader({ meetupId }: PhotoUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Track the live objectURL in a ref so revocation happens exactly once per
+  // URL (in selectFile/resetForm) plus once on unmount — state-driven cleanup
+  // would revoke the *new* URL on every re-select
+  const previewUrlRef = useRef<string | null>(null);
   const [caption, setCaption] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Revoke object URL on cleanup to avoid memory leaks
+  // Revoke whatever URL is live when the component unmounts
   useEffect(() => {
     return () => {
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
       }
     };
-  }, [previewUrl]);
+  }, []);
 
   function selectFile(file: File) {
     // Revoke previous preview URL
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
     }
+    const url = URL.createObjectURL(file);
+    previewUrlRef.current = url;
     setSelectedFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
+    setPreviewUrl(url);
     setError(null);
   }
 
@@ -58,13 +64,15 @@ export default function PhotoUploader({ meetupId }: PhotoUploaderProps) {
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
     if (file) selectFile(file);
+    // selectFile reads previewUrlRef (a ref), so no stale-closure deps needed
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewUrl]);
+  }, []);
 
   function resetForm() {
     setSelectedFile(null);
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
     }
     setPreviewUrl(null);
     setCaption("");
@@ -137,7 +145,7 @@ export default function PhotoUploader({ meetupId }: PhotoUploaderProps) {
         className="relative rounded-xl cursor-pointer transition-colors duration-150"
         style={{
           border: isDragging
-            ? "2.5px dashed #B85C2A"
+            ? "2.5px dashed var(--color-clay-rust)"
             : "2.5px dashed rgba(44,24,16,0.35)",
           background: isDragging
             ? "rgba(184,92,42,0.06)"
@@ -230,7 +238,7 @@ export default function PhotoUploader({ meetupId }: PhotoUploaderProps) {
           style={{
             fontFamily: "var(--font-body)",
             fontSize: "0.9rem",
-            color: "#B85C2A",
+            color: "var(--color-clay-rust)",
           }}
           role="alert"
         >

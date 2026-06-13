@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { deletePhotoAction } from "@/actions/gallery";
 
 interface DeletePhotoButtonProps {
@@ -13,10 +13,17 @@ interface DeletePhotoButtonProps {
  */
 export default function DeletePhotoButton({ photoId }: DeletePhotoButtonProps) {
   const [isPending, startTransition] = useTransition();
+  const [failed, setFailed] = useState(false);
 
   function handleClick() {
+    setFailed(false);
     startTransition(async () => {
-      await deletePhotoAction(photoId);
+      try {
+        await deletePhotoAction(photoId);
+      } catch (e) {
+        console.error("photo delete failed", e);
+        setFailed(true);
+      }
     });
   }
 
@@ -25,10 +32,14 @@ export default function DeletePhotoButton({ photoId }: DeletePhotoButtonProps) {
       type="button"
       onClick={handleClick}
       disabled={isPending}
+      aria-label="remove this photo"
       style={{
         fontFamily: "var(--font-body)",
         fontSize: "0.75rem",
-        color: isPending ? "rgba(92,61,46,0.4)" : "rgba(184,92,42,0.75)",
+        color: isPending
+          ? "var(--color-clay-ink-muted)"
+          : "var(--color-clay-rust)",
+        opacity: isPending ? 0.5 : 0.85,
         background: "none",
         border: "none",
         cursor: isPending ? "not-allowed" : "pointer",
@@ -37,7 +48,7 @@ export default function DeletePhotoButton({ photoId }: DeletePhotoButtonProps) {
         textUnderlineOffset: "2px",
       }}
     >
-      {isPending ? "removing…" : "remove"}
+      {isPending ? "removing…" : failed ? "try again?" : "remove"}
     </button>
   );
 }

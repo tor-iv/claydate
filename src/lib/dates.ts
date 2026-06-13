@@ -122,6 +122,18 @@ export function formatFriendlyDate(iso: string): string {
 }
 
 /**
+ * Formats an epoch-ms timestamp as a short label, e.g. "Jun 12".
+ * Rendered in NY time so comment/photo dates match the studio's clock.
+ */
+export function formatShortEpoch(epochMs: number): string {
+  return new Date(epochMs).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "America/New_York",
+  });
+}
+
+/**
  * Formats an ISO date string as a long label, e.g. "Saturday, June 20".
  * Built from a UTC-noon timestamp so a UTC server can never flip the day.
  */

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import UserTag from "@/components/shared/UserTag";
+import { formatShortEpoch } from "@/lib/dates";
 
 export interface GalleryPhotoEntry {
   filename: string;
@@ -21,14 +22,6 @@ interface GalleryGridProps {
   photoUserIds?: string[];
   /** Slot for a delete button component — rendered per photo if owner matches */
   deleteSlot?: (photoId: string) => ReactNode;
-}
-
-/** Format epoch ms as "Jun 12" style */
-function formatShortDate(epochMs: number): string {
-  return new Date(epochMs).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
 }
 
 export default function GalleryGrid({
@@ -74,15 +67,15 @@ export default function GalleryGrid({
 
         return (
           <div
-            key={photo.filename + i}
+            key={photo.filename}
             className="break-inside-avoid mb-3"
           >
             {/* Polaroid-style card */}
             <div
               className="relative rounded-xl overflow-hidden"
               style={{
-                background: "#F5F0E8",
-                border: "2px solid #2C1810",
+                background: "var(--color-clay-cream)",
+                border: "2px solid var(--color-clay-ink)",
                 boxShadow: "3px 4px 0px rgba(44,24,16,0.18), 1px 2px 8px rgba(44,24,16,0.06)",
                 padding: "8px 8px 12px",
               }}
@@ -91,7 +84,7 @@ export default function GalleryGrid({
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={`/uploads/${photo.filename}`}
-                alt={photo.caption ?? "pottery photo"}
+                alt={photo.caption ?? `photo by ${photo.name}`}
                 loading="lazy"
                 className="w-full rounded-lg"
                 style={{ display: "block", objectFit: "cover" }}
@@ -104,7 +97,7 @@ export default function GalleryGrid({
                     style={{
                       fontFamily: "var(--font-body)",
                       fontSize: "0.85rem",
-                      color: "#2C1810",
+                      color: "var(--color-clay-ink)",
                       lineHeight: 1.45,
                       wordBreak: "break-word",
                     }}
@@ -131,7 +124,7 @@ export default function GalleryGrid({
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {formatShortDate(photo.created_at)}
+                    {formatShortEpoch(photo.created_at)}
                   </span>
                 </div>
 
