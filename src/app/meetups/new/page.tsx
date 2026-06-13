@@ -1,0 +1,150 @@
+import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/session";
+import { createMeetupAction } from "@/actions/meetups";
+import { DEFAULT_LOCATION } from "@/lib/constants";
+import WobblyCard from "@/components/ui/WobblyCard";
+import InkButton from "@/components/ui/InkButton";
+import HandInput from "@/components/ui/HandInput";
+import DoodleIcon from "@/components/ui/DoodleIcon";
+
+interface NewMeetupPageProps {
+  searchParams: Promise<{ error?: string }>;
+}
+
+export default async function NewMeetupPage({ searchParams }: NewMeetupPageProps) {
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect("/login");
+  }
+
+  const { error } = await searchParams;
+
+  return (
+    <main className="flex flex-col items-center min-h-screen px-4 py-8 sm:py-12">
+      <div className="w-full max-w-md mx-auto my-auto">
+        {/* Heading */}
+        <div className="text-center mb-6">
+          <h1
+            className="leading-tight"
+            style={{
+              fontFamily: "var(--font-hand)",
+              fontSize: "clamp(2rem, 7vw, 2.8rem)",
+              fontWeight: 700,
+              color: "#B85C2A",
+            }}
+          >
+            plan a pottery date 🏺
+          </h1>
+          <p
+            className="mt-1"
+            style={{
+              fontFamily: "var(--font-body)",
+              fontSize: "1.05rem",
+              color: "var(--color-clay-ink-muted)",
+            }}
+          >
+            set up a meetup for your crew
+          </p>
+        </div>
+
+        <WobblyCard>
+          <form action={createMeetupAction} className="flex flex-col gap-6">
+            {/* Error message */}
+            {error && (
+              <p
+                role="alert"
+                className="text-sm px-3 py-2 rounded-lg"
+                style={{
+                  fontFamily: "var(--font-body)",
+                  color: "#2C1810",
+                  background: "rgba(212,132,122,0.18)",
+                  border: "1.5px solid rgba(212,132,122,0.5)",
+                }}
+              >
+                {error}
+              </p>
+            )}
+
+            {/* Title */}
+            <HandInput
+              label="what are you making? ✨"
+              name="title"
+              placeholder="e.g. Sunday wheel-throwing session"
+              required
+              maxLength={80}
+            />
+
+            {/* Date */}
+            <div className="flex flex-col gap-1">
+              <label
+                htmlFor="meetup-date"
+                className="text-sm"
+                style={{
+                  fontFamily: "var(--font-hand)",
+                  color: "var(--color-clay-ink-muted)",
+                }}
+              >
+                when is it? 📅
+              </label>
+              <input
+                type="date"
+                id="meetup-date"
+                name="date"
+                required
+                className="hand-input"
+              />
+            </div>
+
+            {/* Time */}
+            <div className="flex flex-col gap-1">
+              <label
+                htmlFor="meetup-time"
+                className="text-sm"
+                style={{
+                  fontFamily: "var(--font-hand)",
+                  color: "var(--color-clay-ink-muted)",
+                }}
+              >
+                what time? ⏰
+              </label>
+              <input
+                type="time"
+                id="meetup-time"
+                name="time"
+                required
+                className="hand-input"
+              />
+            </div>
+
+            {/* Location */}
+            <HandInput
+              label="where? 📍"
+              name="location"
+              defaultValue={DEFAULT_LOCATION}
+              placeholder={DEFAULT_LOCATION}
+              maxLength={80}
+            />
+
+            {/* Note */}
+            <HandInput
+              as="textarea"
+              label="any notes? (optional)"
+              name="note"
+              placeholder="bring your fave apron, we'll have snacks 🍵"
+              maxLength={500}
+              rows={3}
+            />
+
+            {/* Submit */}
+            <div className="flex justify-center pt-2">
+              <InkButton type="submit" variant="primary" className="w-full">
+                <DoodleIcon name="sparkle" size={18} color="#F5F0E8" />
+                let&apos;s make it!
+              </InkButton>
+            </div>
+          </form>
+        </WobblyCard>
+      </div>
+    </main>
+  );
+}
