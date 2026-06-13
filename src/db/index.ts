@@ -48,7 +48,7 @@ function createDb() {
       id TEXT PRIMARY KEY,
       meetup_id TEXT NOT NULL REFERENCES meetups(id) ON DELETE CASCADE,
       user_id TEXT NOT NULL REFERENCES users(id),
-      status TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('yes', 'no', 'maybe')),
       updated_at INTEGER NOT NULL,
       UNIQUE(meetup_id, user_id)
     );

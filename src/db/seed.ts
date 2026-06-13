@@ -15,6 +15,9 @@ const sqlite = new Database(DB_PATH);
 sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON");
 
+// DDL duplicated from index.ts: this script runs via plain `node` (which needs
+// .ts-suffixed relative imports), while index.ts must stay bundler-importable
+// (extensionless imports). Keep both DDL blocks in sync.
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -42,7 +45,7 @@ sqlite.exec(`
     id TEXT PRIMARY KEY,
     meetup_id TEXT NOT NULL REFERENCES meetups(id) ON DELETE CASCADE,
     user_id TEXT NOT NULL REFERENCES users(id),
-    status TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('yes', 'no', 'maybe')),
     updated_at INTEGER NOT NULL,
     UNIQUE(meetup_id, user_id)
   );

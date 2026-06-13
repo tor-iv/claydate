@@ -40,7 +40,7 @@ export const rsvps = sqliteTable(
     user_id: text("user_id")
       .notNull()
       .references(() => users.id),
-    status: text("status").notNull(),
+    status: text("status", { enum: ["yes", "no", "maybe"] }).notNull(),
     updated_at: integer("updated_at").notNull(),
   },
   (t) => [
