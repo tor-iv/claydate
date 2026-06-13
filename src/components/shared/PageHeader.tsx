@@ -24,7 +24,7 @@ const NAV_LINKS = [
 export default function PageHeader({ user = null, activePath }: PageHeaderProps) {
   return (
     <header
-      className="flex items-center justify-between px-6 py-4"
+      className="flex flex-wrap items-center justify-between gap-y-2 px-4 py-3 sm:px-6 sm:py-4"
       style={{
         borderBottom: "2px solid rgba(44,24,16,0.2)",
         background: "rgba(245,240,232,0.85)",
@@ -64,7 +64,8 @@ export default function PageHeader({ user = null, activePath }: PageHeaderProps)
       </Link>
 
       {/* Nav */}
-      <nav className="hidden md:flex items-center gap-1">
+      {/* Full-width centered row below the logo on small screens; inline on md+ */}
+      <nav className="order-3 w-full md:order-none md:w-auto flex items-center justify-center gap-1">
         {NAV_LINKS.map((link) => {
           const isActive = activePath === link.href;
           return (
