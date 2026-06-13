@@ -95,14 +95,14 @@ export interface AvatarGlazeData {
 }
 
 export const AVATAR_GLAZES: AvatarGlazeData[] = [
-  { id: "terracotta", label: "Terracotta",  fill: "#B85C2A" },
-  { id: "celadon",    label: "Celadon",     fill: "#A8C5A0" },
-  { id: "cobalt",     label: "Cobalt Blue", fill: "#4A7BAF" },
-  { id: "ivory",      label: "Ivory",       fill: "#F0E6D0" },
-  { id: "sage-matte", label: "Sage Matte",  fill: "#7A8C6E" },
-  { id: "blush-gloss",label: "Blush Gloss", fill: "#D4847A" },
-  { id: "midnight",   label: "Midnight",    fill: "#2C3E50" },
-  { id: "honey",      label: "Honey",       fill: "#D4A840" },
+  { id: "terracotta", label: "Terracotta",  fill: "#C1622E" },
+  { id: "celadon",    label: "Celadon",     fill: "#8FB89A" },
+  { id: "cobalt",     label: "Cobalt Blue", fill: "#1F4E8C" },
+  { id: "ivory",      label: "Ivory",       fill: "#EDE0C4" },
+  { id: "sage-matte", label: "Sage Matte",  fill: "#6B7D5C" },
+  { id: "blush-gloss",label: "Blush Gloss", fill: "#D98B84" },
+  { id: "midnight",   label: "Midnight",    fill: "#1A2640" },
+  { id: "honey",      label: "Honey",       fill: "#C98A1A" },
 ];
 
 // ── Patterns ──────────────────────────────────────────────────────────────

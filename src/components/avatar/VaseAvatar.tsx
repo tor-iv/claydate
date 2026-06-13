@@ -21,26 +21,49 @@ interface VaseAvatarProps {
 
 /** Darken a hex color by mixing with ink */
 function darkenFill(hex: string, amount = 0.3): string {
+  if (!hex.startsWith("#") || hex.length < 7) return hex;
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
-  const ink = [0x2c, 0x18, 0x10];
+  const ink = [0x18, 0x10, 0x0C];
   const nr = Math.round(r + (ink[0] - r) * amount);
   const ng = Math.round(g + (ink[1] - g) * amount);
   const nb = Math.round(b + (ink[2] - b) * amount);
   return `rgb(${nr},${ng},${nb})`;
 }
 
-/** Lighten a hex color by mixing with cream */
+/** Lighten a hex color by mixing with warm white */
 function lightenFill(hex: string, amount = 0.4): string {
+  if (!hex.startsWith("#") || hex.length < 7) return hex;
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
-  const cream = [0xf5, 0xf0, 0xe8];
+  const cream = [0xF8, 0xF2, 0xE8];
   const nr = Math.round(r + (cream[0] - r) * amount);
   const ng = Math.round(g + (cream[1] - g) * amount);
   const nb = Math.round(b + (cream[2] - b) * amount);
   return `rgb(${nr},${ng},${nb})`;
+}
+
+/** Parse hex to [r, g, b] 0-255, returns null on failure */
+function hexToRgb(hex: string): [number, number, number] | null {
+  if (!hex.startsWith("#") || hex.length < 7) return null;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
+  return [r, g, b];
+}
+
+/** Compute relative lightness (perceptual) 0-1 */
+function getLightness(hex: string): number {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 0.5;
+  const [r, g, b] = rgb;
+  const rn = r / 255, gn = g / 255, bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  return (max + min) / 2;
 }
 
 /**
@@ -234,13 +257,33 @@ export default function VaseAvatar({
   // same shape/glaze/pattern combo renders multiple times on one page.
   // Strip the delimiter chars (e.g. «r1» / :r1:) — they break url(#...) refs.
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
-  const clipId = `clip-${uid}`;
-  const patId  = `pat-${uid}`;
+  const clipId  = `clip-${uid}`;
+  const patId   = `pat-${uid}`;
+  const glazeId = `glaze-${uid}`;
+  const specId  = `spec-${uid}`;
+  const rimId   = `rim-${uid}`;
 
-  const fill        = glazeData.fill;
+  const fill = glazeData.fill;
+  const ink  = "#2C1810";
+
+  // ── Realistic glaze color derivation ────────────────────────────────────
+  // Determine lightness to adapt the gradient stops
+  const lightness = getLightness(fill);
+  const isDark = lightness < 0.35;
+  const isVeryLight = lightness > 0.7;
+
+  // Base color stops
+  // Rim highlight: lighter, slightly bluer (fired glaze brightens at rim)
+  const rimLight   = lightenFill(fill, isDark ? 0.45 : 0.32);
+  // Mid: the true glaze color, slightly saturated
+  const midFill    = fill;
+  // Pool: glaze drips/pools darker and deeper at the base
+  const poolDark   = darkenFill(fill, isDark ? 0.18 : 0.30);
+  // Specular blob: off-center bright spot where kiln light caught the wet glaze
+  const specHigh   = lightenFill(fill, isVeryLight ? 0.55 : isDark ? 0.70 : 0.65);
+
   const patternFill = darkenFill(fill, 0.28);
   const patternFillLight = lightenFill(fill, 0.35);
-  const ink         = "#2C1810";
 
   // Render pattern defs
   function renderPatternDef() {
@@ -321,9 +364,54 @@ export default function VaseAvatar({
           <path d={vasePath} />
         </clipPath>
         {renderPatternDef()}
+
+        {/* ── Realistic glaze: vertical linear gradient (pools at base) ── */}
+        {/* Lighter at rim (top), true color mid-body, darker pooled at base */}
+        <linearGradient
+          id={glazeId}
+          x1="0" y1="0" x2="0" y2="1"
+          gradientUnits="objectBoundingBox"
+        >
+          {/* Rim brightness — fired glaze becomes bright/saturated at opening */}
+          <stop offset="0%"   stopColor={rimLight} stopOpacity="1" />
+          {/* Upper body — close to true glaze color */}
+          <stop offset="25%"  stopColor={lightenFill(midFill, 0.10)} stopOpacity="1" />
+          {/* Mid body — base hue */}
+          <stop offset="55%"  stopColor={midFill}   stopOpacity="1" />
+          {/* Lower body — glaze thickens / deepens as it flows down */}
+          <stop offset="80%"  stopColor={darkenFill(fill, isDark ? 0.12 : 0.20)} stopOpacity="1" />
+          {/* Foot pool — glaze collects and darkens at the base */}
+          <stop offset="100%" stopColor={poolDark} stopOpacity="1" />
+        </linearGradient>
+
+        {/* ── Specular highlight: off-center radial blob (kiln gloss) ── */}
+        <radialGradient
+          id={specId}
+          cx="36%"
+          cy="22%"
+          r="38%"
+          fx="32%"
+          fy="17%"
+          gradientUnits="objectBoundingBox"
+        >
+          <stop offset="0%"   stopColor={specHigh}  stopOpacity="0.75" />
+          <stop offset="45%"  stopColor={specHigh}  stopOpacity="0.20" />
+          <stop offset="100%" stopColor={specHigh}  stopOpacity="0" />
+        </radialGradient>
+
+        {/* ── Rim darkening: thin linear band at top to simulate clay rim shadow ── */}
+        <linearGradient
+          id={rimId}
+          x1="0" y1="0" x2="0" y2="1"
+          gradientUnits="objectBoundingBox"
+        >
+          <stop offset="0%"   stopColor={ink} stopOpacity="0.13" />
+          <stop offset="7%"   stopColor={ink} stopOpacity="0.05" />
+          <stop offset="15%"  stopColor={ink} stopOpacity="0" />
+        </linearGradient>
       </defs>
 
-      {/* Vase fill */}
+      {/* ── Vase: base flat fill (ensures solid fallback + pixel-rounding safety) ── */}
       <path
         d={vasePath}
         fill={fill}
@@ -331,7 +419,31 @@ export default function VaseAvatar({
         strokeLinejoin="round"
       />
 
-      {/* Pattern overlay (clipped to vase) */}
+      {/* ── Vertical gradient glaze (depth: pools at base, bright at rim) ── */}
+      <path
+        d={vasePath}
+        fill={`url(#${glazeId})`}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* ── Specular highlight blob (off-center, upper-left) ── */}
+      <path
+        d={vasePath}
+        fill={`url(#${specId})`}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* ── Rim shadow (slight darkening at top lip) ── */}
+      <path
+        d={vasePath}
+        fill={`url(#${rimId})`}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* ── Pattern overlay (clipped to vase) ── */}
       {patternId !== "plain" && (
         <rect
           x="0"
@@ -343,7 +455,7 @@ export default function VaseAvatar({
         />
       )}
 
-      {/* Face overlay (only for thrown vases with a face) */}
+      {/* ── Face overlay (only for thrown vases with a face) ── */}
       {face !== "none" && (
         <FaceOverlay
           face={face}
@@ -353,7 +465,7 @@ export default function VaseAvatar({
         />
       )}
 
-      {/* Ink outline – hand-drawn feel with slight dasharray */}
+      {/* ── Ink outline – hand-drawn feel ── */}
       <path
         d={vasePath}
         fill="none"
@@ -363,17 +475,17 @@ export default function VaseAvatar({
         strokeLinejoin="round"
       />
 
-      {/* Subtle glaze highlight */}
+      {/* ── Glaze streak highlight (running along the upper left edge) ── */}
       <path
         d={vasePath}
         fill="none"
-        stroke={lightenFill(fill, 0.6)}
+        stroke={specHigh}
         strokeWidth={size < 40 ? 1 : 1.2}
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeDasharray="4 28"
         strokeDashoffset="6"
-        opacity="0.7"
+        opacity="0.55"
         clipPath={`url(#${clipId})`}
       />
     </svg>
