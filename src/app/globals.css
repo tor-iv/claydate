@@ -148,6 +148,11 @@ textarea.hand-input {
   min-height: 80px;
 }
 
+/* ── Calendar day cell hover ─────────────────────────────────────────────── */
+.day-cell-link:hover {
+  background: var(--color-clay-warm);
+}
+
 /* ── Scrollbar ───────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: #E8D5B0; }
