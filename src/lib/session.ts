@@ -7,12 +7,23 @@ export interface SessionData {
   userName: string;
 }
 
-// Dev-only fallback — replace with a real secret in production via SESSION_SECRET env var
-const DEV_ONLY_SECRET = "dev-only-secret-do-not-use-in-production-claydate-2026";
+function resolveSecret(): string {
+  const secret = process.env.SESSION_SECRET;
+  if (secret && secret.length >= 32) {
+    return secret;
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "SESSION_SECRET must be set to a 32+ character value in production"
+    );
+  }
+  console.warn("claydate: SESSION_SECRET not set — using insecure dev secret");
+  return "dev-only-secret-never-used-in-production";
+}
 
 const sessionOptions: SessionOptions = {
   cookieName: "claydate-session",
-  password: process.env.SESSION_SECRET ?? DEV_ONLY_SECRET,
+  password: resolveSecret(),
   // ~1 year in seconds — this is a friends app, no aggressive expiry needed
   ttl: 365 * 24 * 60 * 60,
   cookieOptions: {
