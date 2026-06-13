@@ -2,14 +2,31 @@ services:
   app:
     build: .
     restart: unless-stopped
-    ports:
-      - "80:3000"
+    expose:
+      - "3000"
     volumes:
       - claydata:/app/data
     environment:
       SESSION_SECRET: ${SESSION_SECRET}
       DB_PATH: /app/data/claydate.db
       DATA_DIR: /app/data/uploads
+      # TLS terminates at Caddy — session cookies are issued secure-only
+      HTTPS: "true"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
 
 volumes:
   claydata:
+  caddy_data:
+  caddy_config:
