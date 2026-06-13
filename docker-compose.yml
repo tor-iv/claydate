@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "80:3000"
+    volumes:
+      - claydata:/app/data
+    environment:
+      SESSION_SECRET: ${SESSION_SECRET}
+      DB_PATH: /app/data/claydate.db
+      DATA_DIR: /app/data/uploads
+
+volumes:
+  claydata:

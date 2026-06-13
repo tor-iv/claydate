@@ -1,0 +1,27 @@
+# Deploy to Hetzner on push to main.
+# This workflow is a no-op (fails harmlessly) until these repository secrets
+# are configured in Settings → Secrets and variables → Actions:
+#   HETZNER_IP      — public IPv4 of the server
+#   SSH_PRIVATE_KEY — private key whose public half is in the server's authorized_keys
+
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.HETZNER_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /opt/claydate
+            git pull origin main
+            docker compose up -d --build
