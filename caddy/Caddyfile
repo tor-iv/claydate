@@ -7,12 +7,7 @@ claydate.nyc {
 	reverse_proxy app:3000
 }
 
-# www → apex (works whether or not the www CNAME exists)
-www.claydate.nyc {
-	redir https://claydate.nyc{uri} permanent
-}
-
-http://claydate.nyc http://www.claydate.nyc {
+http://claydate.nyc {
 	redir https://claydate.nyc{uri} permanent
 }
 
