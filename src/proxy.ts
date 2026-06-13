@@ -44,11 +44,9 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization)
-     * - favicon.ico
+     * Match all paths except static/metadata files that must load without a
+     * session: _next assets, and the app icons (favicon.ico, icon.svg, etc.)
      */
-    "/((?!_next/static|_next/image|favicon\\.ico).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico|icon\\.svg|apple-icon\\.png).*)",
   ],
 };
