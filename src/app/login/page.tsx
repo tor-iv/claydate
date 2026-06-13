@@ -19,9 +19,10 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   const { error } = await searchParams;
 
+  // my-auto on the child (not justify-center) so tall content is never clipped off-screen top
   return (
-    <main className="flex flex-col items-center justify-center min-h-screen px-4 py-12">
-      <div className="w-full max-w-md mx-auto">
+    <main className="flex flex-col items-center min-h-screen px-4 py-8 sm:py-12">
+      <div className="w-full max-w-md mx-auto my-auto">
         {/* Heading above card */}
         <div className="text-center mb-6">
           <h1
