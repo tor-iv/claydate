@@ -1,29 +1,44 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import VaseAvatar from "./VaseAvatar";
+import FaceDrawPad from "./FaceDrawPad";
 import {
   AVATAR_SHAPES,
   AVATAR_GLAZES,
   AVATAR_PATTERNS,
-  AVATAR_FACES,
   DEFAULT_AVATAR,
-  DEFAULT_THROWN_PARAMS,
-  encodeThrownShape,
-  buildThrownPath,
   encodeThrown2Shape,
   buildThrown2Path,
   bandsForHeight,
   resampleWidths,
   DEFAULT_THROWN2_WIDTHS,
   DEFAULT_THROWN2_H,
+  parseFaceDrawing,
+  parseMiiFace,
+  encodeMiiFace,
+  DEFAULT_MII_FACE,
+  MII_EYES_COUNT,
+  MII_BROWS_COUNT,
+  MII_MOUTH_COUNT,
+  MII_CHEEKS_COUNT,
+  MII_ACCESSORY_IDS,
+  resolveGlaze,
 } from "@/lib/avatars";
 import type {
   AvatarShape,
   AvatarGlaze,
   AvatarPattern,
   FaceId,
+  MiiFace,
 } from "@/lib/avatars";
+import {
+  EYE_PARTS,
+  BROW_PARTS,
+  MOUTH_PARTS,
+  CHEEK_PARTS,
+  ACCESSORY_PARTS,
+} from "@/lib/faceParts";
 import DoodleIcon from "@/components/ui/DoodleIcon";
 
 interface AvatarBuilderProps {
@@ -50,12 +65,6 @@ const WHEEL_STYLE = `
   50%  { stroke-dashoffset: -60; opacity: 0.2; }
   100% { stroke-dashoffset: -100; opacity: 0.5; }
 }
-@keyframes zoneHintFade {
-  0%   { opacity: 0; }
-  20%  { opacity: 1; }
-  80%  { opacity: 1; }
-  100% { opacity: 0; }
-}
 @keyframes wheelGlow {
   0%   { opacity: 0.4; }
   50%  { opacity: 0.7; }
@@ -64,25 +73,61 @@ const WHEEL_STYLE = `
 `;
 
 // Slightly randomize params for "surprise me" (thrown2)
-function randomThrown2Params(): { h: number; widths: number[] } {
+function randomThrown2Params(): {
+  h: number;
+  widths: number[];
+  edge: number;
+  glaze: AvatarGlaze;
+  face: FaceId | string;
+} {
   const h = 0.2 + Math.random() * 0.8;
   const n = bandsForHeight(h);
   const widths = Array.from({ length: n }, () => 0.2 + Math.random() * 0.8);
-  return { h, widths };
+  const edge = Math.random() < 0.3 ? Math.random() : 0;
+
+  const glaze = AVATAR_GLAZES[Math.floor(Math.random() * AVATAR_GLAZES.length)].id;
+
+  // Face: 60% chance of mii face, 30% preset, 10% none
+  const MII_PALETTE = ["#2C1810", "#B84C2A", "#5B8EC4", "#D4847A", "#6B8F6A", "#C9901A"];
+  let face: FaceId | string;
+  const faceRoll = Math.random();
+  if (faceRoll < 0.6) {
+    const accessory = Math.random() < 0.55
+      ? "none"
+      : MII_ACCESSORY_IDS[Math.floor(Math.random() * MII_ACCESSORY_IDS.length)];
+    const mii: MiiFace = {
+      eyes:      Math.floor(Math.random() * MII_EYES_COUNT),
+      brows:     Math.floor(Math.random() * MII_BROWS_COUNT),
+      mouth:     Math.floor(Math.random() * MII_MOUTH_COUNT),
+      cheeks:    Math.floor(Math.random() * MII_CHEEKS_COUNT),
+      accessory,
+      ink:       MII_PALETTE[Math.floor(Math.random() * MII_PALETTE.length)],
+    };
+    face = encodeMiiFace(mii);
+  } else if (faceRoll < 0.9) {
+    const faces: FaceId[] = ["happy", "sleepy", "winky", "surprised"];
+    face = faces[Math.floor(Math.random() * faces.length)];
+  } else {
+    face = "none";
+  }
+
+  return { h, widths, edge, glaze, face };
 }
 
 // ── WheelVasePreview ──────────────────────────────────────────────────────
-// The big pottery-wheel sculpting area — now uses thrown2.
+// Fluid pottery-wheel sculpting area using Gaussian neighbor falloff drag.
 
 interface WheelVasePreviewProps {
   h: number;
   widths: number[];
-  glaze: AvatarGlaze;
+  glaze: string;
   pattern: AvatarPattern;
-  face: FaceId;
+  face: FaceId | string;
   edge: number;
-  onHeightChange: (h: number) => void;
-  onWidthsChange: (widths: number[]) => void;
+  /** Live sculpt during a drag: set height + widths together, no band-count resample. */
+  onSculpt: (h: number, widths: number[]) => void;
+  /** Drag released: settle the band count to the height's natural value. */
+  onSculptEnd: () => void;
 }
 
 function WheelVasePreview({
@@ -92,8 +137,8 @@ function WheelVasePreview({
   pattern,
   face,
   edge,
-  onHeightChange,
-  onWidthsChange,
+  onSculpt,
+  onSculptEnd,
 }: WheelVasePreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
@@ -104,6 +149,7 @@ function WheelVasePreview({
     startWidths: number[];
     activeBandIndex: number;
     relYAtDown: number;
+    hasDragged: boolean;
   }>({
     active: false,
     startX: 0,
@@ -112,18 +158,14 @@ function WheelVasePreview({
     startWidths: widths.slice(),
     activeBandIndex: 0,
     relYAtDown: 0.5,
+    hasDragged: false,
   });
-  const [hoveredBandIndex, setHoveredBandIndex] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Size of preview in px
   const PREVIEW_SIZE = 220;
+  const DRAG_THRESHOLD = 4; // pixels — must move at least this far to count as a drag
 
-  // Convert pointer event to relative vase coords
-  function getRelativePos(e: PointerEvent | React.PointerEvent): {
-    relX: number;
-    relY: number;
-  } {
+  function getRelativePos(e: React.PointerEvent): { relX: number; relY: number } {
     if (!containerRef.current) return { relX: 0.5, relY: 0.5 };
     const rect = containerRef.current.getBoundingClientRect();
     const relX = (e.clientX - rect.left) / rect.width;
@@ -131,12 +173,7 @@ function WheelVasePreview({
     return { relX, relY };
   }
 
-  /**
-   * Map a pointer relY (0=top, 1=bottom) to the nearest band index.
-   * Bands are indexed 0=foot (bottom) to N-1=lip (top).
-   */
   function bandIndexForRelY(relY: number, n: number): number {
-    // relY=0 → lip (top, index N-1), relY=1 → foot (bottom, index 0)
     const t = 1 - relY; // 0=foot, 1=lip
     const idx = Math.round(t * (n - 1));
     return Math.max(0, Math.min(n - 1, idx));
@@ -146,7 +183,7 @@ function WheelVasePreview({
     e.preventDefault();
     const el = containerRef.current;
     if (!el) return;
-    el.setPointerCapture(e.pointerId);
+    try { el.setPointerCapture(e.pointerId); } catch { /* capture is best-effort */ }
 
     const { relY } = getRelativePos(e);
     const n = widths.length;
@@ -160,95 +197,87 @@ function WheelVasePreview({
       startWidths: widths.slice(),
       activeBandIndex,
       relYAtDown: relY,
+      hasDragged: false,
     };
-    setIsDragging(true);
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    if (!dragRef.current.active) {
-      // Update hover band
-      const { relY } = getRelativePos(e);
-      setHoveredBandIndex(bandIndexForRelY(relY, widths.length));
-      return;
+    if (!dragRef.current.active) return;
+
+    const totalDx = e.clientX - dragRef.current.startX;
+    const totalDy = e.clientY - dragRef.current.startY;
+    const totalDist = Math.sqrt(totalDx * totalDx + totalDy * totalDy);
+
+    if (!dragRef.current.hasDragged && totalDist > DRAG_THRESHOLD) {
+      dragRef.current.hasDragged = true;
+      setIsDragging(true);
     }
+
+    if (!dragRef.current.hasDragged) return;
 
     e.preventDefault();
-    const dy = e.clientY - dragRef.current.startY;
-    const dx = e.clientX - dragRef.current.startX;
 
-    const vSens = 1 / PREVIEW_SIZE;
-    const hSens = 1 / PREVIEW_SIZE;
+    const startWidths = dragRef.current.startWidths;
+    const startBands = startWidths.length;
+    const active = dragRef.current.activeBandIndex;
 
-    // Vertical drag adjusts height
-    const hDelta = -dy * vSens * 1.4; // pull up = taller
+    // Axis-proportional gains: a mostly-vertical drag is mostly height, a
+    // mostly-horizontal drag is mostly width — so the two never fight each
+    // other and the motion feels intentional rather than twitchy.
+    const adx = Math.abs(totalDx);
+    const ady = Math.abs(totalDy);
+    const mag = adx + ady + 0.0001;
+    const wGain = 0.3 + 0.7 * (adx / mag); // 0.3 .. 1.0
+    const hGain = 0.3 + 0.7 * (ady / mag);
+
+    // Height — global, eased by the vertical share of the gesture.
+    const hDelta = (-totalDy / PREVIEW_SIZE) * 1.5 * hGain;
     const newH = Math.max(0, Math.min(1, dragRef.current.startH + hDelta));
 
-    // Horizontal drag adjusts the active band's width
-    const wDelta = dx * hSens * 1.6;
-    const bi = dragRef.current.activeBandIndex;
-    const newWidths = dragRef.current.startWidths.slice();
+    // Width — a clay "pull" centered on the grabbed band, falling off to its
+    // neighbors with a Gaussian so the wall bulges smoothly like real clay
+    // being drawn up, instead of one band kinking out on its own.
+    const wPull = (totalDx / PREVIEW_SIZE) * 2.0 * wGain;
+    const sigma = Math.max(0.75, (startBands - 1) * 0.4);
+    const twoSigSq = 2 * sigma * sigma;
+    const newWidths = startWidths.map((w, i) => {
+      const influence = Math.exp(-((i - active) ** 2) / twoSigSq);
+      // Floor at 0.06 so the pot never pinches to a vanishing thread.
+      return Math.max(0.06, Math.min(1, w + wPull * influence));
+    });
 
-    // When height crosses band thresholds, resample widths live
-    const prevBands = bandsForHeight(dragRef.current.startH);
-    const newBands = bandsForHeight(newH);
-    let adjustedWidths: number[];
-    if (newBands !== prevBands) {
-      // Resample so silhouette doesn't jump
-      adjustedWidths = resampleWidths(newWidths, newBands);
-    } else {
-      adjustedWidths = newWidths;
-    }
-
-    // Apply horizontal drag to the band nearest to drag start relY,
-    // mapped to the (potentially resampled) new band array
-    const newBandIdx = Math.round(
-      (dragRef.current.activeBandIndex / Math.max(1, prevBands - 1)) *
-        Math.max(1, newBands - 1)
-    );
-    const clampedIdx = Math.max(0, Math.min(newBands - 1, newBandIdx));
-    adjustedWidths[clampedIdx] = Math.max(
-      0,
-      Math.min(1, (adjustedWidths[clampedIdx] ?? 0.5) + wDelta)
-    );
-
-    onHeightChange(newH);
-    onWidthsChange(adjustedWidths);
+    // Set height + widths together at a FIXED band count — no mid-drag
+    // resampling, which is what used to make the height drag jump.
+    onSculpt(newH, newWidths);
   }
 
   function handlePointerUp() {
+    if (!dragRef.current.active) return;
+    const didDrag = dragRef.current.hasDragged;
     dragRef.current.active = false;
+    dragRef.current.hasDragged = false;
+    setIsDragging(false);
+    // Settle the band count to the final height's natural value once, on release.
+    if (didDrag) onSculptEnd();
+  }
+
+  function handlePointerCancel() {
+    dragRef.current.active = false;
+    dragRef.current.hasDragged = false;
     setIsDragging(false);
   }
 
-  function handlePointerLeave() {
-    setHoveredBandIndex(null);
-    if (!dragRef.current.active) {
-      setIsDragging(false);
-    }
-  }
-
-  // Compute band boundary Y positions (in the 180px preview space)
-  // Band 0 = foot (bottom), Band N-1 = lip (top)
   const N = widths.length;
-  const bandBoundaryYs: number[] = [];
-  for (let i = 0; i <= N; i++) {
-    const t = i / N;
-    // t=0 → top (lip side), t=1 → bottom (foot side)
-    bandBoundaryYs.push(t * PREVIEW_SIZE);
-  }
-
-  const shapeStr = encodeThrown2Shape(h, widths, face, edge);
+  const shapeStr = encodeThrown2Shape(h, widths, face as FaceId, edge);
 
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 0 }}>
-      {/* The pottery-wheel assembly */}
       <div
         ref={containerRef}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        onPointerLeave={handlePointerLeave}
+        onPointerCancel={handlePointerCancel}
         style={{
           width: PREVIEW_SIZE,
           height: PREVIEW_SIZE,
@@ -263,62 +292,7 @@ function WheelVasePreview({
         role="img"
         aria-label="Drag to sculpt your vase"
       >
-        {/* Per-band dashed boundary lines + handle dots */}
-        {!isDragging && (
-          <svg
-            style={{
-              position: "absolute",
-              inset: 0,
-              pointerEvents: "none",
-              zIndex: 5,
-            }}
-            width={PREVIEW_SIZE}
-            height={PREVIEW_SIZE}
-            viewBox={`0 0 ${PREVIEW_SIZE} ${PREVIEW_SIZE}`}
-            fill="none"
-          >
-            {Array.from({ length: N - 1 }, (_, i) => {
-              // Band boundaries between band i and i+1 (from top)
-              // The boundary at index i+1 from top = fraction (i+1)/N of height
-              const fracFromTop = (i + 1) / N;
-              const yPos = fracFromTop * PREVIEW_SIZE;
-              const bandIdxFromBottom = N - 1 - i; // which band this boundary is below
-              const isHovered = hoveredBandIndex === bandIdxFromBottom || hoveredBandIndex === bandIdxFromBottom - 1;
-              return (
-                <g key={i}>
-                  <line
-                    x1="10"
-                    y1={yPos}
-                    x2={PREVIEW_SIZE - 10}
-                    y2={yPos}
-                    stroke="#B85C2A"
-                    strokeWidth="0.8"
-                    strokeDasharray="3 5"
-                    opacity={isHovered ? 0.7 : 0.25}
-                    style={{ transition: "opacity 0.15s ease" }}
-                  />
-                </g>
-              );
-            })}
-            {/* Handle dot for hovered band */}
-            {hoveredBandIndex !== null && (() => {
-              const bandFromTop = N - 1 - hoveredBandIndex;
-              const centerFrac = (bandFromTop + 0.5) / N;
-              const cy = centerFrac * PREVIEW_SIZE;
-              return (
-                <circle
-                  cx={PREVIEW_SIZE / 2}
-                  cy={cy}
-                  r={4}
-                  fill="#B85C2A"
-                  opacity={0.55}
-                />
-              );
-            })()}
-          </svg>
-        )}
-
-        {/* Vase avatar — stays still, symmetry implies the spinning */}
+        {/* Vase avatar */}
         <div style={{ position: "relative", zIndex: 2 }}>
           <VaseAvatar
             shape={shapeStr}
@@ -326,7 +300,7 @@ function WheelVasePreview({
             pattern={pattern}
             size={PREVIEW_SIZE - 20}
           />
-          {/* Animated highlight streaks (CSS-only, no viewBox mutation) */}
+          {/* Animated highlight streaks */}
           <svg
             style={{
               position: "absolute",
@@ -347,9 +321,7 @@ function WheelVasePreview({
               strokeLinecap="round"
               strokeDasharray="8 52"
               strokeDashoffset="0"
-              style={{
-                animation: "highlightSweep 2.1s linear infinite",
-              }}
+              style={{ animation: "highlightSweep 2.1s linear infinite" }}
             />
             <path
               d={buildThrown2Path(h, widths, edge)}
@@ -359,9 +331,7 @@ function WheelVasePreview({
               strokeLinecap="round"
               strokeDasharray="5 60"
               strokeDashoffset="-20"
-              style={{
-                animation: "highlightSweep2 3.3s linear infinite",
-              }}
+              style={{ animation: "highlightSweep2 3.3s linear infinite" }}
             />
           </svg>
         </div>
@@ -386,42 +356,9 @@ function WheelVasePreview({
         >
           {N} bands
         </div>
-
-        {/* Zone hint label — show which band is hovered */}
-        {!isDragging && hoveredBandIndex !== null && (
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              top: `${((N - 1 - hoveredBandIndex + 0.5) / N) * 100}%`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              pointerEvents: "none",
-              zIndex: 10,
-            }}
-          >
-            <span
-              style={{
-                fontFamily: "var(--font-hand)",
-                fontSize: "0.72rem",
-                color: "#B85C2A",
-                background: "rgba(245,240,232,0.88)",
-                border: "1px dashed #B85C2A",
-                borderRadius: 4,
-                padding: "1px 6px",
-                whiteSpace: "nowrap",
-                letterSpacing: "0.01em",
-              }}
-            >
-              ← band {hoveredBandIndex + 1} →
-            </span>
-          </div>
-        )}
       </div>
 
-      {/* Wheel base (spinning) */}
+      {/* Wheel base */}
       <div style={{ position: "relative", marginTop: -8, zIndex: 1 }}>
         <svg
           width={PREVIEW_SIZE + 20}
@@ -430,19 +367,9 @@ function WheelVasePreview({
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
         >
-          {/* Wheel shadow */}
-          <ellipse
-            cx="100"
-            cy="32"
-            rx="85"
-            ry="7"
-            fill="rgba(44,24,16,0.12)"
-          />
-          {/* Wheel body */}
+          <ellipse cx="100" cy="32" rx="85" ry="7" fill="rgba(44,24,16,0.12)" />
           <ellipse cx="100" cy="22" rx="78" ry="14" fill="#5C3D2E" />
           <ellipse cx="100" cy="18" rx="78" ry="12" fill="#7A5540" />
-
-          {/* Spinning lines on wheel surface */}
           <g style={{ transformOrigin: "100px 18px", animation: "wheelSpin 3s linear infinite" }}>
             {[0, 45, 90, 135].map((angle) => (
               <line
@@ -455,15 +382,10 @@ function WheelVasePreview({
                 strokeWidth="1"
               />
             ))}
-            {/* Concentric rings on the wheel */}
             <ellipse cx="100" cy="18" rx="30" ry="5" stroke="rgba(255,255,255,0.1)" strokeWidth="1" fill="none" />
             <ellipse cx="100" cy="18" rx="55" ry="9" stroke="rgba(255,255,255,0.07)" strokeWidth="1" fill="none" />
           </g>
-
-          {/* Wheel rim highlight */}
           <ellipse cx="100" cy="15" rx="78" ry="12" fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="1.5" />
-
-          {/* Glowing center */}
           <ellipse
             cx="100"
             cy="18"
@@ -472,13 +394,10 @@ function WheelVasePreview({
             fill="rgba(255,255,255,0.18)"
             style={{ animation: "wheelGlow 2s ease-in-out infinite" }}
           />
-
-          {/* Wheel shaft */}
           <rect x="94" y="30" width="12" height="8" rx="2" fill="#3C2518" />
         </svg>
       </div>
 
-      {/* Drag hint text */}
       <p
         style={{
           fontFamily: "var(--font-hand)",
@@ -490,63 +409,397 @@ function WheelVasePreview({
           transition: "opacity 0.15s",
         }}
       >
-        {isDragging ? "shaping…" : "drag up/down = height · left/right = width"}
+        {isDragging ? "shaping…" : "↕ height  ↔ band width"}
       </p>
     </div>
   );
 }
 
-// ── MiniVaseFace ─────────────────────────────────────────────────────────
-// Small chip showing a vase wearing a specific face
+// ── FaceStudio ────────────────────────────────────────────────────────────
+// Two-tab face builder: "Build" (Mii-style part picker) and "Doodle" (freehand).
 
-function MiniVaseFace({
-  face,
-  glaze,
-  pattern,
-  selected,
+const FACE_PALETTE = [
+  { id: "ink",    hex: "#2C1810", label: "Ink" },
+  { id: "rust",   hex: "#B84C2A", label: "Rust" },
+  { id: "sky",    hex: "#5B8EC4", label: "Sky" },
+  { id: "blush",  hex: "#D4847A", label: "Blush" },
+  { id: "sage",   hex: "#6B8F6A", label: "Sage" },
+  { id: "honey",  hex: "#C9901A", label: "Honey" },
+];
+
+const PREVIEW_S = 2.0; // scale for chip SVG previews (cx=32,cy=32 in 64px viewBox)
+const CHIP_SIZE = 52;
+
+/** Small inline SVG chip that previews a single face part. */
+function PartChip({
+  part,
+  category,
+  isSelected,
   onClick,
-  label,
 }: {
-  face: FaceId;
-  glaze: AvatarGlaze;
-  pattern: AvatarPattern;
-  selected: boolean;
+  part: { id: string; label: string; render: (cx: number, cy: number, s: number, ink: string) => React.ReactNode };
+  category: string;
+  isSelected: boolean;
   onClick: () => void;
-  label: string;
 }) {
-  const shapeStr = encodeThrown2Shape(DEFAULT_THROWN2_H, DEFAULT_THROWN2_WIDTHS, face);
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label={label}
-      aria-pressed={selected}
+      aria-label={`${category}: ${part.label}`}
+      aria-pressed={isSelected}
+      title={part.label}
       style={{
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        gap: 3,
-        padding: "6px 8px",
-        borderRadius: 10,
-        background: selected ? "rgba(184,92,42,0.12)" : "rgba(232,213,176,0.3)",
-        border: selected ? "2px solid #2C1810" : "2px solid transparent",
+        gap: 2,
+        padding: "4px 5px",
+        borderRadius: 9,
+        background: isSelected ? "rgba(184,92,42,0.13)" : "rgba(232,213,176,0.35)",
+        border: isSelected ? "2px solid #2C1810" : "2px solid transparent",
         cursor: "pointer",
-        transform: selected ? "scale(1.08)" : "scale(1)",
-        transition: "transform 0.12s ease, border-color 0.12s ease, background 0.12s ease",
+        transform: isSelected ? "scale(1.1)" : "scale(1)",
+        transition: "transform 0.1s ease, border-color 0.1s, background 0.1s",
+        flexShrink: 0,
       }}
     >
-      <VaseAvatar shape={shapeStr} glaze={glaze} pattern={pattern} size={38} />
+      <svg
+        width={CHIP_SIZE}
+        height={CHIP_SIZE}
+        viewBox="0 0 64 64"
+        fill="none"
+        style={{ display: "block" }}
+      >
+        <circle cx="32" cy="32" r="28" fill="rgba(245,240,232,0.9)" stroke="rgba(44,24,16,0.12)" strokeWidth="1" />
+        {part.render(32, 32, PREVIEW_S, "#2C1810")}
+      </svg>
       <span
         style={{
           fontFamily: "var(--font-hand)",
-          fontSize: "0.7rem",
-          color: "var(--color-clay-ink-muted)",
+          fontSize: "0.62rem",
+          color: isSelected ? "#2C1810" : "var(--color-clay-ink-muted)",
           lineHeight: 1,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {part.label}
+      </span>
+    </button>
+  );
+}
+
+/** Horizontal scrollable row of part chips with a label. */
+function PartRow({
+  label,
+  parts,
+  selectedIndex,
+  onSelect,
+}: {
+  label: string;
+  parts: { id: string; label: string; render: (cx: number, cy: number, s: number, ink: string) => React.ReactNode }[];
+  selectedIndex: number;
+  onSelect: (i: number) => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <span
+        style={{
+          fontFamily: "var(--font-hand)",
+          fontSize: "0.75rem",
+          color: "var(--color-clay-ink-muted)",
+          paddingLeft: 2,
         }}
       >
         {label}
       </span>
-    </button>
+      <div
+        style={{
+          display: "flex",
+          gap: 5,
+          overflowX: "auto",
+          paddingBottom: 2,
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
+        {parts.map((part, i) => (
+          <PartChip
+            key={part.id}
+            part={part}
+            category={label}
+            isSelected={i === selectedIndex}
+            onClick={() => onSelect(i)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Horizontal scrollable row for accessory (keyed by string id, not index). */
+function AccessoryRow({
+  selectedId,
+  onSelect,
+}: {
+  selectedId: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <span
+        style={{
+          fontFamily: "var(--font-hand)",
+          fontSize: "0.75rem",
+          color: "var(--color-clay-ink-muted)",
+          paddingLeft: 2,
+        }}
+      >
+        Accessory
+      </span>
+      <div
+        style={{
+          display: "flex",
+          gap: 5,
+          overflowX: "auto",
+          paddingBottom: 2,
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
+        {ACCESSORY_PARTS.map((part) => (
+          <PartChip
+            key={part.id}
+            part={part}
+            category="Accessory"
+            isSelected={part.id === selectedId}
+            onClick={() => onSelect(part.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FaceStudio({
+  face,
+  glaze,
+  onFaceChange,
+}: {
+  face: FaceId | string;
+  glaze: string;
+  onFaceChange: (f: FaceId | string) => void;
+}) {
+  // Determine active tab from the current face type
+  const defaultTab = typeof face === "string" && face.startsWith("draw:") ? "doodle" : "build";
+  const [tab, setTab] = useState<"build" | "doodle">(defaultTab);
+  const glazeHex = resolveGlaze(glaze);
+
+  // Parse mii state from face prop (or fall back to defaults)
+  const initMii: MiiFace = typeof face === "string" && face.startsWith("mii:")
+    ? parseMiiFace(face)
+    : { ...DEFAULT_MII_FACE };
+
+  const [mii, setMii] = useState<MiiFace>(initMii);
+
+  // Keep mii state in sync when face prop changes externally (e.g. surprise me)
+  useEffect(() => {
+    if (typeof face === "string" && face.startsWith("mii:")) {
+      setMii(parseMiiFace(face));
+    }
+  }, [face]);
+
+  function updateMii(update: Partial<MiiFace>) {
+    const next = { ...mii, ...update };
+    setMii(next);
+    onFaceChange(encodeMiiFace(next));
+  }
+
+  function handleDrawChange(encoding: string) {
+    onFaceChange(!encoding || encoding === "none" ? "none" : encoding);
+  }
+
+  const pillBase: React.CSSProperties = {
+    fontFamily: "var(--font-hand)",
+    fontSize: "0.82rem",
+    padding: "5px 16px",
+    borderRadius: 20,
+    border: "none",
+    cursor: "pointer",
+    transition: "background 0.15s, color 0.15s",
+  };
+  const pillActive: React.CSSProperties = {
+    background: "#B85C2A",
+    color: "#F5F0E8",
+  };
+  const pillInactive: React.CSSProperties = {
+    background: "rgba(232,213,176,0.5)",
+    color: "var(--color-clay-ink-muted)",
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {/* Tab toggle */}
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <button
+          type="button"
+          onClick={() => {
+            setTab("build");
+            // If currently a draw face, switch to mii
+            if (typeof face !== "string" || !face.startsWith("mii:")) {
+              onFaceChange(encodeMiiFace(mii));
+            }
+          }}
+          style={{ ...pillBase, ...(tab === "build" ? pillActive : pillInactive) }}
+          aria-pressed={tab === "build"}
+        >
+          Build
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setTab("doodle");
+            // If currently a mii/preset face, don't wipe — just switch display
+            if (typeof face === "string" && !face.startsWith("draw:")) {
+              onFaceChange("none");
+            }
+          }}
+          style={{ ...pillBase, ...(tab === "doodle" ? pillActive : pillInactive) }}
+          aria-pressed={tab === "doodle"}
+        >
+          Doodle
+        </button>
+      </div>
+
+      {/* Build tab */}
+      {tab === "build" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <PartRow
+            label="Eyes"
+            parts={EYE_PARTS}
+            selectedIndex={mii.eyes}
+            onSelect={(i) => updateMii({ eyes: i })}
+          />
+          <PartRow
+            label="Brows"
+            parts={BROW_PARTS}
+            selectedIndex={mii.brows}
+            onSelect={(i) => updateMii({ brows: i })}
+          />
+          <PartRow
+            label="Mouth"
+            parts={MOUTH_PARTS}
+            selectedIndex={mii.mouth}
+            onSelect={(i) => updateMii({ mouth: i })}
+          />
+          <PartRow
+            label="Cheeks"
+            parts={CHEEK_PARTS}
+            selectedIndex={mii.cheeks}
+            onSelect={(i) => updateMii({ cheeks: i })}
+          />
+          <AccessoryRow selectedId={mii.accessory} onSelect={(id) => updateMii({ accessory: id })} />
+
+          {/* Ink color row */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontFamily: "var(--font-hand)", fontSize: "0.75rem", color: "var(--color-clay-ink-muted)", paddingLeft: 2 }}>
+              Ink Color
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              {FACE_PALETTE.map((c) => {
+                const isActive = mii.ink === c.hex;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    title={c.label}
+                    aria-label={c.label}
+                    aria-pressed={isActive}
+                    onClick={() => updateMii({ ink: c.hex })}
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: "50%",
+                      background: c.hex,
+                      border: isActive ? "2.5px solid #2C1810" : "1.5px solid rgba(44,24,16,0.22)",
+                      transform: isActive ? "scale(1.2)" : "scale(1)",
+                      cursor: "pointer",
+                      boxShadow: isActive ? "0 0 0 2px rgba(44,24,16,0.14)" : "none",
+                      transition: "transform 0.1s",
+                      flexShrink: 0,
+                    }}
+                  />
+                );
+              })}
+              {/* Custom ink color */}
+              <label
+                title="Custom ink color"
+                style={{
+                  position: "relative",
+                  width: 24,
+                  height: 24,
+                  borderRadius: "50%",
+                  background: `conic-gradient(#2C1810, #B84C2A, #5B8EC4, #D4847A, #6B8F6A, #C9901A, #2C1810)`,
+                  border: FACE_PALETTE.every((c) => c.hex !== mii.ink) ? "2.5px solid #2C1810" : "1.5px solid rgba(44,24,16,0.3)",
+                  cursor: "pointer",
+                  overflow: "hidden",
+                  flexShrink: 0,
+                }}
+              >
+                <input
+                  type="color"
+                  value={mii.ink}
+                  onChange={(e) => updateMii({ ink: e.target.value })}
+                  style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%", height: "100%", padding: 0, border: "none" }}
+                  aria-label="Custom ink color"
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* No-face button */}
+          <button
+            type="button"
+            onClick={() => onFaceChange("none")}
+            style={{
+              fontFamily: "var(--font-hand)",
+              fontSize: "0.75rem",
+              color: face === "none" ? "#B85C2A" : "rgba(92,61,46,0.6)",
+              background: face === "none" ? "rgba(184,92,42,0.1)" : "transparent",
+              border: face === "none" ? "1.5px dashed #B85C2A" : "1.5px dashed rgba(44,24,16,0.2)",
+              borderRadius: 8,
+              padding: "4px 12px",
+              cursor: "pointer",
+              alignSelf: "flex-start",
+              marginTop: 2,
+            }}
+            aria-pressed={face === "none"}
+          >
+            ✕ no face
+          </button>
+        </div>
+      )}
+
+      {/* Doodle tab */}
+      {tab === "doodle" && (
+        <div
+          style={{
+            background: "rgba(232,213,176,0.25)",
+            borderRadius: 12,
+            padding: "12px 12px 8px",
+            border: "1.5px dashed rgba(44,24,16,0.2)",
+          }}
+        >
+          <FaceDrawPad
+            onChange={handleDrawChange}
+            glazeColor={glazeHex}
+            initialStrokes={
+              typeof face === "string" && face.startsWith("draw:")
+                ? parseFaceDrawing(face)
+                : []
+            }
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -558,54 +811,50 @@ export default function AvatarBuilder({
   defaultPattern = DEFAULT_AVATAR.pattern,
   formMode = true,
 }: AvatarBuilderProps) {
-  // Mode: "throw" = minigame; "classic" = preset picker (via disclosure)
+  // Mode: "throw" = wheel; "classic" = preset picker (via disclosure)
   const [mode, setMode] = useState<"throw" | "classic">("throw");
 
   // Thrown2 vase state
   const [thrown2H, setThrown2H] = useState<number>(DEFAULT_THROWN2_H);
   const [thrown2Widths, setThrown2Widths] = useState<number[]>(DEFAULT_THROWN2_WIDTHS.slice());
-  const [face, setFace] = useState<FaceId>("happy");
-  // edge dial: 0 = pretty round (default) … 1 = fully angular
+  const [face, setFace] = useState<FaceId | string>("happy");
+  // edge dial: 0 = round (default) … 1 = fully angular
   const [edge, setEdge] = useState<number>(0);
 
   // Shared state
-  const [glaze,   setGlaze]   = useState<AvatarGlaze>(defaultGlaze);
+  const [glaze,   setGlaze]   = useState<string>(defaultGlaze as string);
   const [pattern, setPattern] = useState<AvatarPattern>(defaultPattern);
 
   // Classic preset state
-  const [classicShape, setClassicShape] = useState<string>(defaultShape);
-
-  // Classic disclosure open/closed
+  const [classicShape, setClassicShape] = useState<string>(defaultShape as string);
   const [classicOpen, setClassicOpen] = useState(false);
 
-  // Handle height changes — resampling widths if band count changes
-  function handleHeightChange(newH: number) {
-    const prevBands = bandsForHeight(thrown2H);
-    const newBands = bandsForHeight(newH);
+  // Live sculpt during an active wheel drag: set height + widths together
+  // WITHOUT changing the band count, so the drag stays fluid.
+  function handleSculpt(newH: number, newWidths: number[]) {
     setThrown2H(newH);
-    if (newBands !== prevBands) {
-      setThrown2Widths((prev) => resampleWidths(prev, newBands));
-    }
+    setThrown2Widths(newWidths);
   }
 
-  // Handle width array changes from the wheel (already resampled by wheel)
-  function handleWidthsChange(newWidths: number[]) {
-    setThrown2Widths(newWidths);
+  // On drag release, settle the band count to the height's natural value.
+  function handleSculptEnd() {
+    const nb = bandsForHeight(thrown2H);
+    setThrown2Widths((prev) => (prev.length === nb ? prev : resampleWidths(prev, nb)));
   }
 
   // The final shape string to emit
   const shapeValue = mode === "throw"
-    ? encodeThrown2Shape(thrown2H, thrown2Widths, face, edge)
+    ? encodeThrown2Shape(thrown2H, thrown2Widths, face as FaceId, edge)
     : classicShape;
 
   function handleSurprise() {
-    const { h, widths } = randomThrown2Params();
+    const { h, widths, edge: newEdge, glaze: newGlaze, face: newFace } = randomThrown2Params();
+    const newBands = bandsForHeight(h);
     setThrown2H(h);
-    setThrown2Widths(widths);
-    const faces: FaceId[] = ["happy", "sleepy", "winky", "surprised", "none"];
-    setFace(faces[Math.floor(Math.random() * faces.length)]);
-    // Randomize edge: mostly roundish, occasionally fully angular
-    setEdge(Math.random() < 0.35 ? Math.random() : 0);
+    setThrown2Widths(widths.length === newBands ? widths : resampleWidths(widths, newBands));
+    setEdge(newEdge);
+    setGlaze(newGlaze);
+    setFace(newFace);
   }
 
   function handleReset() {
@@ -647,8 +896,8 @@ export default function AvatarBuilder({
             pattern={pattern}
             face={face}
             edge={edge}
-            onHeightChange={handleHeightChange}
-            onWidthsChange={handleWidthsChange}
+            onSculpt={handleSculpt}
+            onSculptEnd={handleSculptEnd}
           />
 
           {/* Action buttons */}
@@ -692,10 +941,9 @@ export default function AvatarBuilder({
         </div>
       )}
 
-      {/* ── Classic picker (shown when mode=classic) ────────────────────── */}
+      {/* ── Classic picker ────────────────────────────────────────────────── */}
       {mode === "classic" && (
         <div className="flex flex-col items-center gap-3">
-          {/* Preview of selected preset */}
           <div
             style={{
               display: "flex",
@@ -718,7 +966,6 @@ export default function AvatarBuilder({
               {AVATAR_SHAPES.find((s) => s.id === classicShape)?.label ?? "Classic"}
             </span>
           </div>
-
           <button
             type="button"
             onClick={switchToThrow}
@@ -738,7 +985,7 @@ export default function AvatarBuilder({
         </div>
       )}
 
-      {/* ── Face + Edge picker ──────────────────────────────────────────── */}
+      {/* ── Face studio (throw mode only) ────────────────────────────────── */}
       {mode === "throw" && (
         <section>
           <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -748,7 +995,7 @@ export default function AvatarBuilder({
             >
               Face
             </h4>
-            {/* Edge dial — round ◠ … angular ◇ */}
+            {/* Edge dial — round ◠ … angular ◇ — kept from original ClayDate UI */}
             <label
               className="flex items-center gap-2"
               style={{ fontFamily: "var(--font-hand)", fontSize: "0.78rem", color: "#5C3D2E" }}
@@ -767,19 +1014,11 @@ export default function AvatarBuilder({
               <span aria-hidden="true">◇</span>
             </label>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {AVATAR_FACES.map((f) => (
-              <MiniVaseFace
-                key={f.id}
-                face={f.id}
-                glaze={glaze}
-                pattern={pattern}
-                selected={face === f.id}
-                onClick={() => setFace(f.id)}
-                label={f.label}
-              />
-            ))}
-          </div>
+          <FaceStudio
+            face={face}
+            glaze={glaze}
+            onFaceChange={setFace}
+          />
         </section>
       )}
 
@@ -843,7 +1082,7 @@ export default function AvatarBuilder({
               aria-pressed={pattern === p.id}
             >
               <VaseAvatar
-                shape={mode === "throw" ? encodeThrown2Shape(thrown2H, thrown2Widths, face, edge) : classicShape}
+                shape={mode === "throw" ? encodeThrown2Shape(thrown2H, thrown2Widths, face as FaceId, edge) : classicShape}
                 glaze={glaze}
                 pattern={p.id}
                 size={32}

@@ -137,6 +137,197 @@ export const AVATAR_FACES: AvatarFaceData[] = [
   { id: "surprised", label: "Surprised" },
 ];
 
+// ── parseFaceDrawing / encodeFaceDrawing ──────────────────────────────────
+// Face drawing strokes.  The `~` separator is intentional — face strings are
+// embedded inside the thrown2 shape encoding which uses ";" as its field
+// delimiter, so ";" must not appear in the face value.
+
+export interface DrawStroke {
+  /** Points as flat [x, y, x, y, ...] integers in face-zone space (0..100) */
+  points: number[];
+  /**
+   * Stroke color as a hex string (e.g. "#2C1810").
+   * Defaults to ink "#2C1810" when absent (backward compat with old draw strings).
+   */
+  color?: string;
+  /**
+   * Stroke width in canvas pixels at the reference canvas size.
+   * Defaults to 1 (thin) when absent. Stored as an integer 1..9.
+   */
+  width?: number;
+}
+
+/**
+ * Parse a "draw:..." face string into an array of strokes.
+ *
+ * NEW format (v2): each pipe-delimited segment carries optional color+width prefix:
+ *   c#rrggbb~wN~x1,y1,x2,y2,...
+ * where `c` = color prefix, `w` = width prefix, then comma-joined points.
+ *
+ * OLD format (v1, backward-compatible): each segment is just comma-joined integers.
+ * Old segments default to color="#2C1810" and width=1.
+ */
+export function parseFaceDrawing(face: string): DrawStroke[] {
+  if (!face.startsWith("draw:")) return [];
+  const data = face.slice("draw:".length);
+  if (!data) return [];
+
+  return data.split("|").map((seg) => {
+    // Detect new v2 format: starts with 'c' or 'w' metadata prefix
+    if (seg.startsWith("c") || seg.startsWith("w")) {
+      let color: string | undefined;
+      let width: number | undefined;
+      let ptStr = seg;
+
+      // Extract color (separator is "~"; also accept legacy ";")
+      const cMatch = ptStr.match(/^c(#[0-9A-Fa-f]{6})[~;]/);
+      if (cMatch) {
+        color = cMatch[1];
+        ptStr = ptStr.slice(cMatch[0].length);
+      }
+
+      // Extract width (separator is "~"; also accept legacy ";")
+      const wMatch = ptStr.match(/^w([1-9])[~;]/);
+      if (wMatch) {
+        width = parseInt(wMatch[1], 10);
+        ptStr = ptStr.slice(wMatch[0].length);
+      }
+
+      const pts = ptStr.split(",").map(Number).filter((v) => !isNaN(v));
+      return { points: pts, color, width } satisfies DrawStroke;
+    }
+
+    // Old v1 format — plain point list, defaults applied
+    const pts = seg.split(",").map(Number).filter((v) => !isNaN(v));
+    return { points: pts } satisfies DrawStroke;
+  }).filter((s) => s.points.length >= 4);
+}
+
+/**
+ * Encode an array of strokes to a "draw:..." face string.
+ *
+ * Strokes with non-default color or width use the v2 format prefix.
+ * Strokes with default ink + thin use the v1 format for compactness.
+ * Points are rounded to integers; each stroke is capped at 64 points (32 xy pairs).
+ * Total strokes capped at 20.
+ */
+export function encodeFaceDrawing(strokes: DrawStroke[]): string {
+  const DEFAULT_COLOR = "#2C1810";
+  const DEFAULT_WIDTH = 1;
+
+  const parts = strokes.slice(0, 20).map((s) => {
+    const pts = s.points.slice(0, 64).map(Math.round).join(",");
+    const color = s.color ?? DEFAULT_COLOR;
+    const width = Math.max(1, Math.min(9, Math.round(s.width ?? DEFAULT_WIDTH)));
+
+    const hasCustomColor = color !== DEFAULT_COLOR;
+    const hasCustomWidth = width !== DEFAULT_WIDTH;
+
+    if (!hasCustomColor && !hasCustomWidth) {
+      // v1 compact format — backward compatible
+      return pts;
+    }
+
+    // v2 format with prefix(es). Separator is "~" (NOT ";") because face
+    // strings are embedded into the thrown2 shape encoding, which uses ";"
+    // as its field delimiter — a ";" here would corrupt parseShape().
+    let prefix = "";
+    if (hasCustomColor) prefix += `c${color}~`;
+    if (hasCustomWidth) prefix += `w${width}~`;
+    return `${prefix}${pts}`;
+  });
+  return `draw:${parts.join("|")}`;
+}
+
+// ── Mii-style part-based face ─────────────────────────────────────────────
+// Format: mii:e{n}~b{n}~m{n}~c{n}~a{id}~i{hexNoHash}
+// No ";" or "," or "=" inside the value — safe to embed in thrown2 shape strings.
+
+export interface MiiFace {
+  eyes: number;
+  brows: number;
+  mouth: number;
+  cheeks: number;
+  accessory: string;
+  ink: string;
+}
+
+export const MII_EYES_COUNT = 6;
+export const MII_BROWS_COUNT = 5;
+export const MII_MOUTH_COUNT = 6;
+export const MII_CHEEKS_COUNT = 4;
+export const MII_ACCESSORY_IDS = ["none", "glasses", "sunglasses", "mustache", "star"] as const;
+
+export const DEFAULT_MII_FACE: MiiFace = {
+  eyes: 0,
+  brows: 0,
+  mouth: 0,
+  cheeks: 1,
+  accessory: "none",
+  ink: "#2C1810",
+};
+
+export function parseMiiFace(s: string): MiiFace {
+  const result: MiiFace = { ...DEFAULT_MII_FACE };
+  if (!s.startsWith("mii:")) return result;
+  const data = s.slice("mii:".length);
+  if (!data) return result;
+
+  for (const token of data.split("~")) {
+    if (!token) continue;
+    const key = token[0];
+    const val = token.slice(1);
+    switch (key) {
+      case "e": {
+        const n = parseInt(val, 10);
+        if (!isNaN(n)) result.eyes = Math.max(0, Math.min(MII_EYES_COUNT - 1, n));
+        break;
+      }
+      case "b": {
+        const n = parseInt(val, 10);
+        if (!isNaN(n)) result.brows = Math.max(0, Math.min(MII_BROWS_COUNT - 1, n));
+        break;
+      }
+      case "m": {
+        const n = parseInt(val, 10);
+        if (!isNaN(n)) result.mouth = Math.max(0, Math.min(MII_MOUTH_COUNT - 1, n));
+        break;
+      }
+      case "c": {
+        const n = parseInt(val, 10);
+        if (!isNaN(n)) result.cheeks = Math.max(0, Math.min(MII_CHEEKS_COUNT - 1, n));
+        break;
+      }
+      case "a": {
+        result.accessory = MII_ACCESSORY_IDS.includes(val as typeof MII_ACCESSORY_IDS[number])
+          ? val
+          : "none";
+        break;
+      }
+      case "i": {
+        // ink stored without leading #
+        if (/^[0-9A-Fa-f]{6}$/.test(val)) {
+          result.ink = `#${val}`;
+        }
+        break;
+      }
+    }
+  }
+  return result;
+}
+
+export function encodeMiiFace(p: MiiFace): string {
+  const inkHex = p.ink.startsWith("#") ? p.ink.slice(1) : p.ink;
+  return [
+    `mii:e${p.eyes}`,
+    `b${p.brows}`,
+    `m${p.mouth}`,
+    `c${p.cheeks}`,
+    `a${p.accessory}`,
+    `i${inkHex}`,
+  ].join("~");
+}
+
 // ── Thrown vase parameters ────────────────────────────────────────────────
 
 export interface ThrownParams {
@@ -157,7 +348,7 @@ export interface ThrownParams {
 const VALID_FACE_IDS = new Set<FaceId>(["none", "happy", "sleepy", "winky", "surprised"]);
 const PRESET_IDS = new Set<string>(AVATAR_SHAPES.map((s) => s.id));
 
-function clamp01(v: number): number {
+export function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v));
 }
 
@@ -188,7 +379,7 @@ export function parseEdge(raw: string | undefined): number {
 export type ParsedShape =
   | { kind: "preset"; id: PresetShapeId }
   | { kind: "thrown"; params: ThrownParams; face: FaceId }
-  | { kind: "thrown2"; h: number; widths: number[]; face: FaceId; edge: number };
+  | { kind: "thrown2"; h: number; widths: number[]; face: FaceId | string; edge: number };
 
 /** Parse an avatar_shape string to either a preset or thrown shape. */
 export function parseShape(shape: string): ParsedShape {
@@ -292,10 +483,15 @@ export function parseShape(shape: string): ParsedShape {
           ? parsedWidths
           : resampleWidths(parsedWidths, expectedBands);
 
+      // Parse face — preset id, "draw:..." encoding, or "mii:..." encoding
       const rawFace = parts["face"];
-      const face: FaceId = VALID_FACE_IDS.has(rawFace as FaceId)
-        ? (rawFace as FaceId)
-        : "none";
+      let face: FaceId | string;
+      if (rawFace.startsWith("draw:") || rawFace.startsWith("mii:")) {
+        // Custom drawn/mii face — keep as-is
+        face = rawFace;
+      } else {
+        face = VALID_FACE_IDS.has(rawFace as FaceId) ? (rawFace as FaceId) : "none";
+      }
 
       // Parse edge dial — keyword or 0..1 number, missing → 0 (round)
       const edge = parseEdge(parts["edge"]);
@@ -317,7 +513,8 @@ export function canonicalizeShape(shape: string): string {
     return parsed.id;
   }
   if (parsed.kind === "thrown2") {
-    return encodeThrown2Shape(parsed.h, parsed.widths, parsed.face, parsed.edge);
+    // face may be a FaceId or an extended "mii:"/"draw:" string
+    return encodeThrown2Shape(parsed.h, parsed.widths, parsed.face as FaceId | string, parsed.edge);
   }
   return encodeThrownShape(parsed.params, parsed.face);
 }
@@ -333,18 +530,27 @@ export function bandsForHeight(h: number): number {
   return 2 + Math.round(clamp01(h) * 2);
 }
 
-/** Encode a thrown2 vase to a storable string. edge is a 0..1 dial (0 = round). */
+/**
+ * Encode a thrown2 vase to a storable string.
+ * edge is a 0..1 dial (0 = round).
+ * face may be a preset id like "happy" or an extended string like "mii:..." or "draw:...".
+ * The "~" separator is used inside mii/draw strings so they are safe to embed in the
+ * ";" delimited thrown2 format without corruption.
+ */
 export function encodeThrown2Shape(
   h: number,
   widths: number[],
-  face: FaceId,
+  face: FaceId | string,
   edge: number = 0
 ): string {
   const hStr = clamp01(h).toFixed(3);
   const wStr = widths.map((w) => clamp01(w).toFixed(3)).join(",");
-  const faceId: FaceId = VALID_FACE_IDS.has(face) ? face : "none";
+  // Allow mii:/draw: strings to pass through; only validate preset ids
+  const faceStr = (typeof face === "string" && (face.startsWith("mii:") || face.startsWith("draw:")))
+    ? face
+    : (VALID_FACE_IDS.has(face as FaceId) ? face : "none");
   const edgeStr = clamp01(edge).toFixed(2);
-  return `thrown2:h=${hStr};w=${wStr};edge=${edgeStr};face=${faceId}`;
+  return `thrown2:h=${hStr};w=${wStr};edge=${edgeStr};face=${faceStr}`;
 }
 
 /**
@@ -579,6 +785,29 @@ export function buildThrown2Path(h: number, widths: number[], edge: number = 0):
     `Q 32 ${p(footY + 1.5 * round)}, ${p(rFoot)} ${p(footY)}`,
     "Z",
   ].join(" ");
+}
+
+// ── resolveGlaze ──────────────────────────────────────────────────────────
+
+/**
+ * Resolve a glaze string to a hex color.
+ * - Preset id (e.g. "terracotta") → looks up fill from AVATAR_GLAZES
+ * - Raw hex (e.g. "#C47A3A") → returns as-is
+ * - Unknown → returns default terracotta
+ */
+export function resolveGlaze(glaze: string): string {
+  if (!glaze) return AVATAR_GLAZES[0].fill;
+  // Raw hex
+  if (/^#[0-9A-Fa-f]{6}$/.test(glaze)) return glaze;
+  if (/^#[0-9A-Fa-f]{3}$/.test(glaze)) {
+    const r = glaze[1] + glaze[1];
+    const g = glaze[2] + glaze[2];
+    const b = glaze[3] + glaze[3];
+    return `#${r}${g}${b}`;
+  }
+  // Preset id lookup
+  const found = AVATAR_GLAZES.find((g) => g.id === glaze);
+  return found ? found.fill : AVATAR_GLAZES[0].fill;
 }
 
 // ── Default ───────────────────────────────────────────────────────────────

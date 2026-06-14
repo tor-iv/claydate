@@ -2,14 +2,22 @@ import { useId } from "react";
 import {
   getShape,
   getGlaze,
-  getPattern,
   parseShape,
   buildThrownPath,
   buildThrown2Path,
   thrown2LipY,
   THROWN2_FOOT_Y,
+  parseFaceDrawing,
+  parseMiiFace,
 } from "@/lib/avatars";
 import type { AvatarShape, AvatarGlaze, AvatarPattern, FaceId, ThrownParams } from "@/lib/avatars";
+import {
+  getEyePart,
+  getBrowPart,
+  getMouthPart,
+  getCheekPart,
+  getAccessoryPart,
+} from "@/lib/faceParts";
 
 interface VaseAvatarProps {
   shape?: AvatarShape | string;
@@ -69,6 +77,7 @@ function getLightness(hex: string): number {
 /**
  * Render a face onto the vase at the given position.
  * cx/cy = center of face area; scale = size factor.
+ * Supports preset faces, mii: part-based faces, and draw: freehand faces.
  */
 function FaceOverlay({
   face,
@@ -76,18 +85,75 @@ function FaceOverlay({
   cy,
   scale,
 }: {
-  face: FaceId;
+  face: FaceId | string;
   cx: number;
   cy: number;
   scale: number;
 }) {
-  if (face === "none") return null;
+  if (!face || face === "none") return null;
 
+  // Custom drawn face — render with per-stroke color + width
+  if (typeof face === "string" && face.startsWith("draw:")) {
+    const strokes = parseFaceDrawing(face);
+    if (strokes.length === 0) return null;
+    const DEFAULT_INK = "#2C1810";
+    // Face zone is a roughly 14×12 SVG unit area mapped around cx,cy
+    const zoneW = 14 * scale;
+    const zoneH = 12 * scale;
+    return (
+      <g>
+        {strokes.map((stroke, si) => {
+          if (stroke.points.length < 4) return null;
+          const pts: string[] = [];
+          for (let i = 0; i + 1 < stroke.points.length; i += 2) {
+            const fx = (stroke.points[i]     / 100) * zoneW - zoneW / 2 + cx;
+            const fy = (stroke.points[i + 1] / 100) * zoneH - zoneH / 2 + cy;
+            pts.push(`${fx.toFixed(2)},${fy.toFixed(2)}`);
+          }
+          // Per-stroke color + width, default to ink + 1px
+          const strokeColor = stroke.color ?? DEFAULT_INK;
+          // width stored as canvas px at reference size; scale to SVG units
+          const refWidth = stroke.width ?? 1;
+          // Map: width 1 → 1.2 SVG units at scale=1, width 9 → ~5 units
+          const svgWidth = (0.8 + refWidth * 0.45) * scale;
+          return (
+            <polyline
+              key={si}
+              points={pts.join(" ")}
+              stroke={strokeColor}
+              strokeWidth={svgWidth}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          );
+        })}
+      </g>
+    );
+  }
+
+  // Mii part-based face
+  if (typeof face === "string" && face.startsWith("mii:")) {
+    const mii = parseMiiFace(face);
+    const s = scale;
+    const ink = mii.ink || "#2C1810";
+    return (
+      <g>
+        {getCheekPart(mii.cheeks).render(cx, cy, s, ink)}
+        {getEyePart(mii.eyes).render(cx, cy, s, ink)}
+        {getBrowPart(mii.brows).render(cx, cy, s, ink)}
+        {getMouthPart(mii.mouth).render(cx, cy, s, ink)}
+        {getAccessoryPart(mii.accessory).render(cx, cy, s, ink)}
+      </g>
+    );
+  }
+
+  const faceId = face as FaceId;
   const ink = "#2C1810";
   const blushColor = "rgba(212,132,122,0.55)";
-  const s = scale; // shorthand
+  const s = scale;
 
-  switch (face) {
+  switch (faceId) {
     case "happy":
       return (
         <g>
@@ -206,22 +272,81 @@ function getFacePosition(
   }
   if (kind === "thrown2" && thrown2) {
     const { h, widths } = thrown2;
-    // Use the actual lip/foot ys from the path builder helpers
-    const lipY = thrown2LipY(h);    // h=0 → 34, h=1 → 6
-    const footY = THROWN2_FOOT_Y;  // 58
-    // Place face near the widest band in the upper portion
+    // Use the actual lip/foot ys from the path builder helpers.
+    // ClayDate: thrown2LipY h=0→35, h=1→6; THROWN2_FOOT_Y=57
+    const lipY = thrown2LipY(h);
+    const footY = THROWN2_FOOT_Y;
+
     const N = widths.length;
-    const upperThirdEnd = Math.ceil(N * 0.67);
+
+    // Constants from ClayDate's buildThrown2Path (must stay in sync):
+    const MIN_HW = 3.2;
+    const MAX_HW = 26.0;
+
+    // Per-band Y positions + half-widths (mirror buildThrown2Path exactly).
+    // Band 0 = foot (bottom), band N-1 = lip (top).
+    const bandY: number[] = [];
+    const bandHW: number[] = [];
+    for (let i = 0; i < N; i++) {
+      const t = i / Math.max(1, N - 1);
+      bandY.push(footY - t * (footY - lipY));
+      const w = Math.min(Math.max(widths[i] ?? 0.5, 0), 1);
+      bandHW.push(MIN_HW + w * (MAX_HW - MIN_HW));
+    }
+
+    // Linearly-interpolated wall half-width at any Y. This is a conservative
+    // estimate: round walls bulge OUTWARD past the linear chord, so the real
+    // pot is never narrower than this — guaranteeing the face fits.
+    const halfWidthAt = (y: number): number => {
+      if (y >= bandY[0]) return bandHW[0];          // at/below foot
+      if (y <= bandY[N - 1]) return bandHW[N - 1];  // at/above lip
+      for (let i = 0; i < N - 1; i++) {
+        const yBot = bandY[i];      // larger y (lower)
+        const yTop = bandY[i + 1];  // smaller y (higher)
+        if (y <= yBot && y >= yTop) {
+          const f = (yBot - y) / (yBot - yTop);
+          return bandHW[i] + f * (bandHW[i + 1] - bandHW[i]);
+        }
+      }
+      return bandHW[N - 1];
+    };
+
+    // Center the face on the widest band within the 25–75% body range.
+    const loBand = Math.floor(N * 0.25);
+    const hiBand = Math.ceil(N * 0.75);
     let maxW = -1;
     let maxIdx = Math.floor(N * 0.5);
-    for (let i = 1; i < upperThirdEnd; i++) {
-      if (widths[i] > maxW) { maxW = widths[i]; maxIdx = i; }
+    for (let i = loBand; i <= Math.min(hiBand, N - 1); i++) {
+      if ((widths[i] ?? 0) > maxW) { maxW = widths[i]; maxIdx = i; }
     }
-    const t = maxIdx / (N - 1);
-    // bandY at maxIdx: footY - t*(footY-lipY)
-    const faceY = footY - t * (footY - lipY);
-    const avgWidth = widths.reduce((a, b) => a + b, 0) / widths.length;
-    const scale = 0.5 + avgWidth * 0.4;
+    const faceY = bandY[maxIdx];
+
+    // Face footprint at scale=1 (covers both preset faces and the 14×12
+    // custom-draw zone): ±7.2px horizontally, and ±6px vertically around cy.
+    const FACE_HALF_EXTENT = 7.2;
+    const FACE_V_UP = 6;
+    const FACE_V_DOWN = 6;
+
+    // Natural scale from the face band's width. Kept deliberately small so the
+    // face reads as a cute little face on the pot, never dominating it.
+    const naturalScale = Math.min(0.4 + (widths[maxIdx] ?? 0.5) * 0.28, 0.66);
+
+    // The limiting wall is the NARROWEST point the face spans vertically —
+    // critical for hourglass/waisted pots where the face sits at a pinch.
+    const spanTop = faceY - FACE_V_UP * naturalScale;
+    const spanBot = faceY + FACE_V_DOWN * naturalScale;
+    let minHW = Infinity;
+    const SAMPLES = 8;
+    for (let k = 0; k <= SAMPLES; k++) {
+      const y = spanTop + (spanBot - spanTop) * (k / SAMPLES);
+      minHW = Math.min(minHW, halfWidthAt(y));
+    }
+
+    // Fit the face within 58% of the narrowest wall half-width it overlaps —
+    // tight enough to leave a clear clay margin all around the face.
+    const fitScale = (minHW * 0.58) / FACE_HALF_EXTENT;
+    const scale = Math.max(0.3, Math.min(naturalScale, fitScale));
+
     return { cx: 32, cy: faceY, scale };
   }
   // For preset shapes: center vertically around 57% of viewBox height, centered X
@@ -247,15 +372,15 @@ export default function VaseAvatar({
       ? buildThrown2Path(parsed.h, parsed.widths, parsed.edge)
       : getShape(parsed.id).path;
 
+  // Resolve glaze: try preset id first, then raw hex, fallback to terracotta
   const glazeData  = getGlaze(glazeProp  ?? "terracotta");
   const patternId  = (patternProp ?? "plain") as AvatarPattern;
 
-  // Face only exists on thrown vases
-  const face: FaceId = (isThrownShape || isThrown2Shape) ? parsed.face : "none";
+  // Face only exists on thrown vases (may be a FaceId or mii:/draw: string)
+  const face: FaceId | string = (isThrownShape || isThrown2Shape) ? parsed.face : "none";
 
   // useId guarantees document-unique, SSR/hydration-stable ids even when the
   // same shape/glaze/pattern combo renders multiple times on one page.
-  // Strip the delimiter chars (e.g. «r1» / :r1:) — they break url(#...) refs.
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const clipId  = `clip-${uid}`;
   const patId   = `pat-${uid}`;
@@ -267,19 +392,13 @@ export default function VaseAvatar({
   const ink  = "#2C1810";
 
   // ── Realistic glaze color derivation ────────────────────────────────────
-  // Determine lightness to adapt the gradient stops
   const lightness = getLightness(fill);
   const isDark = lightness < 0.35;
   const isVeryLight = lightness > 0.7;
 
-  // Base color stops
-  // Rim highlight: lighter, slightly bluer (fired glaze brightens at rim)
   const rimLight   = lightenFill(fill, isDark ? 0.45 : 0.32);
-  // Mid: the true glaze color, slightly saturated
   const midFill    = fill;
-  // Pool: glaze drips/pools darker and deeper at the base
   const poolDark   = darkenFill(fill, isDark ? 0.18 : 0.30);
-  // Specular blob: off-center bright spot where kiln light caught the wet glaze
   const specHigh   = lightenFill(fill, isVeryLight ? 0.55 : isDark ? 0.70 : 0.65);
 
   const patternFill = darkenFill(fill, 0.28);
@@ -366,21 +485,15 @@ export default function VaseAvatar({
         {renderPatternDef()}
 
         {/* ── Realistic glaze: vertical linear gradient (pools at base) ── */}
-        {/* Lighter at rim (top), true color mid-body, darker pooled at base */}
         <linearGradient
           id={glazeId}
           x1="0" y1="0" x2="0" y2="1"
           gradientUnits="objectBoundingBox"
         >
-          {/* Rim brightness — fired glaze becomes bright/saturated at opening */}
           <stop offset="0%"   stopColor={rimLight} stopOpacity="1" />
-          {/* Upper body — close to true glaze color */}
           <stop offset="25%"  stopColor={lightenFill(midFill, 0.10)} stopOpacity="1" />
-          {/* Mid body — base hue */}
           <stop offset="55%"  stopColor={midFill}   stopOpacity="1" />
-          {/* Lower body — glaze thickens / deepens as it flows down */}
           <stop offset="80%"  stopColor={darkenFill(fill, isDark ? 0.12 : 0.20)} stopOpacity="1" />
-          {/* Foot pool — glaze collects and darkens at the base */}
           <stop offset="100%" stopColor={poolDark} stopOpacity="1" />
         </linearGradient>
 
@@ -411,7 +524,7 @@ export default function VaseAvatar({
         </linearGradient>
       </defs>
 
-      {/* ── Vase: base flat fill (ensures solid fallback + pixel-rounding safety) ── */}
+      {/* ── Vase: base flat fill ── */}
       <path
         d={vasePath}
         fill={fill}
@@ -419,7 +532,7 @@ export default function VaseAvatar({
         strokeLinejoin="round"
       />
 
-      {/* ── Vertical gradient glaze (depth: pools at base, bright at rim) ── */}
+      {/* ── Vertical gradient glaze ── */}
       <path
         d={vasePath}
         fill={`url(#${glazeId})`}
@@ -427,7 +540,7 @@ export default function VaseAvatar({
         strokeLinejoin="round"
       />
 
-      {/* ── Specular highlight blob (off-center, upper-left) ── */}
+      {/* ── Specular highlight blob ── */}
       <path
         d={vasePath}
         fill={`url(#${specId})`}
@@ -435,7 +548,7 @@ export default function VaseAvatar({
         strokeLinejoin="round"
       />
 
-      {/* ── Rim shadow (slight darkening at top lip) ── */}
+      {/* ── Rim shadow ── */}
       <path
         d={vasePath}
         fill={`url(#${rimId})`}
