@@ -67,9 +67,10 @@ export const EYE_PARTS: FacePart[] = [
     label: "Wink",
     render: (cx, cy, s, ink) => (
       <g key="eye-wink">
-        <circle cx={cx - 3.5 * s} cy={cy - 1 * s} r={1.1 * s} fill={ink} />
+        <circle cx={cx - 3.5 * s} cy={cy - 1.2 * s} r={1.7 * s} fill={ink} />
+        <circle cx={cx - 4 * s}   cy={cy - 1.7 * s} r={0.6 * s} fill="white" />
         <path
-          d={`M ${cx + 2 * s} ${cy - 1 * s} Q ${cx + 3.5 * s} ${cy - 3 * s} ${cx + 5 * s} ${cy - 1 * s}`}
+          d={`M ${cx + 2.3 * s} ${cy - 0.9 * s} Q ${cx + 3.5 * s} ${cy - 2.4 * s} ${cx + 4.7 * s} ${cy - 0.9 * s}`}
           stroke={ink} strokeWidth={1.1 * s} fill="none" strokeLinecap="round"
         />
       </g>
@@ -260,11 +261,19 @@ export const MOUTH_PARTS: FacePart[] = [
     render: (cx, cy, s, ink) => (
       <g key="mouth-tongue">
         <path
-          d={`M ${cx - 2.8 * s} ${cy + 2.2 * s} Q ${cx} ${cy + 5.5 * s} ${cx + 2.8 * s} ${cy + 2.2 * s}`}
+          d={`M ${cx - 2.6 * s} ${cy + 1.8 * s} Q ${cx} ${cy + 4.2 * s} ${cx + 2.6 * s} ${cy + 1.8 * s}`}
           stroke={ink} strokeWidth={1.0 * s} fill="none" strokeLinecap="round"
         />
-        {/* Tongue sticking out */}
-        <ellipse cx={cx} cy={cy + 4.8 * s} rx={1.4 * s} ry={1.0 * s} fill="#D4847A" />
+        {/* Tongue sticking out past the smile */}
+        <ellipse
+          cx={cx + 0.8 * s} cy={cy + 4.2 * s} rx={1.9 * s} ry={1.5 * s}
+          fill="#E0766A" stroke={ink} strokeWidth={0.55 * s}
+        />
+        {/* Center crease */}
+        <path
+          d={`M ${cx + 0.8 * s} ${cy + 3.2 * s} Q ${cx + 0.9 * s} ${cy + 4.2 * s} ${cx + 0.8 * s} ${cy + 5.1 * s}`}
+          stroke={ink} strokeWidth={0.45 * s} fill="none" strokeLinecap="round" strokeOpacity={0.65}
+        />
       </g>
     ),
   },

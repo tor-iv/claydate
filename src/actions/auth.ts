@@ -35,16 +35,19 @@ function validShape(id: string): AvatarShape {
   if (id.startsWith("thrown2:")) {
     const parsed = parseShape(id);
     if (parsed.kind === "thrown2") {
-      return encodeThrown2Shape(parsed.h, parsed.widths, parsed.face, parsed.edge) as AvatarShape;
+      return encodeThrown2Shape(parsed.h, parsed.widths, parsed.face, parsed.edge, parsed.faceT) as AvatarShape;
     }
   }
   return DEFAULT_AVATAR.shape;
 }
 
 function validGlaze(id: string): AvatarGlaze {
-  return AVATAR_GLAZES.some((g) => g.id === id)
-    ? (id as AvatarGlaze)
-    : DEFAULT_AVATAR.glaze;
+  if (AVATAR_GLAZES.some((g) => g.id === id)) return id as AvatarGlaze;
+  // Raw hex glazes render via resolveGlaze — keep them instead of resetting
+  if (/^#[0-9A-Fa-f]{3}$/.test(id) || /^#[0-9A-Fa-f]{6}$/.test(id)) {
+    return id as AvatarGlaze;
+  }
+  return DEFAULT_AVATAR.glaze;
 }
 
 function validPattern(id: string): AvatarPattern {

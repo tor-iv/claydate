@@ -24,6 +24,7 @@ import {
   MII_CHEEKS_COUNT,
   MII_ACCESSORY_IDS,
   resolveGlaze,
+  DEFAULT_FACE_TRANSFORM,
 } from "@/lib/avatars";
 import type {
   AvatarShape,
@@ -31,6 +32,7 @@ import type {
   AvatarPattern,
   FaceId,
   MiiFace,
+  FaceTransform,
 } from "@/lib/avatars";
 import {
   EYE_PARTS,
@@ -124,6 +126,7 @@ interface WheelVasePreviewProps {
   pattern: AvatarPattern;
   face: FaceId | string;
   edge: number;
+  faceT?: FaceTransform;
   /** Live sculpt during a drag: set height + widths together, no band-count resample. */
   onSculpt: (h: number, widths: number[]) => void;
   /** Drag released: settle the band count to the height's natural value. */
@@ -137,6 +140,7 @@ function WheelVasePreview({
   pattern,
   face,
   edge,
+  faceT,
   onSculpt,
   onSculptEnd,
 }: WheelVasePreviewProps) {
@@ -268,7 +272,7 @@ function WheelVasePreview({
   }
 
   const N = widths.length;
-  const shapeStr = encodeThrown2Shape(h, widths, face as FaceId, edge);
+  const shapeStr = encodeThrown2Shape(h, widths, face as FaceId, edge, faceT);
 
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 0 }}>
@@ -803,6 +807,153 @@ function FaceStudio({
   );
 }
 
+// ── FaceAdjust: manual size / shape / location sliders ─────────────────────
+
+function FaceSlider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <span style={{ fontFamily: "var(--font-hand)", fontSize: "0.78rem", color: "#5C3D2E" }}>
+        {label}
+      </span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        style={{ width: "100%", accentColor: "#B85C2A", cursor: "pointer" }}
+      />
+    </label>
+  );
+}
+
+function FaceAdjust({
+  faceT,
+  onChange,
+}: {
+  faceT: FaceTransform;
+  onChange: (t: FaceTransform) => void;
+}) {
+  const set = (patch: Partial<FaceTransform>) => onChange({ ...faceT, ...patch });
+  const isDefault =
+    faceT.s === 1 && faceT.x === 0 && faceT.y === 0 && faceT.a === 0;
+
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        padding: "10px 12px",
+        background: "rgba(232,213,176,0.3)",
+        borderRadius: 12,
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontFamily: "var(--font-hand)", fontSize: "0.85rem", color: "#2C1810" }}>
+          fine-tune the face
+        </span>
+        {!isDefault && (
+          <button
+            type="button"
+            onClick={() => onChange(DEFAULT_FACE_TRANSFORM)}
+            style={{
+              fontFamily: "var(--font-hand)",
+              fontSize: "0.75rem",
+              color: "#5C3D2E",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              textDecoration: "underline",
+              textDecorationStyle: "dotted",
+            }}
+          >
+            ↺ reset
+          </button>
+        )}
+      </div>
+      <FaceSlider label="size" value={faceT.s} min={0.5} max={1.8} step={0.05} onChange={(v) => set({ s: v })} />
+      <FaceSlider label="shape · tall ↔ wide" value={faceT.a} min={-0.35} max={0.35} step={0.01} onChange={(v) => set({ a: v })} />
+      <FaceSlider label="move · left ↔ right" value={faceT.x} min={-12} max={12} step={0.5} onChange={(v) => set({ x: v })} />
+      <FaceSlider label="move · up ↔ down" value={faceT.y} min={-14} max={14} step={0.5} onChange={(v) => set({ y: v })} />
+    </div>
+  );
+}
+
+// ── StickyMiniPreview ──────────────────────────────────────────────────────
+// Compact live pot pill that sticks to the top of the viewport once the
+// wheel scrolls away (narrow containers only — hidden at @3xl where the
+// wheel column is sticky instead). Zero-height rail so it never shifts
+// layout. Must stay `sticky` (not `fixed`): the builder root is a
+// size container, which makes it the containing block for fixed children.
+function StickyMiniPreview({
+  visible,
+  shape,
+  glaze,
+  pattern,
+  onJump,
+}: {
+  visible: boolean;
+  shape: string;
+  glaze: string;
+  pattern: string;
+  onJump: () => void;
+}) {
+  return (
+    <div className="sticky z-30 h-0 @3xl:hidden" style={{ top: 10 }}>
+      <button
+        type="button"
+        onClick={onJump}
+        aria-label="Show the pottery wheel"
+        aria-hidden={!visible}
+        tabIndex={visible ? 0 : -1}
+        style={{
+          position: "absolute",
+          left: "50%",
+          transform: visible
+            ? "translateX(-50%) translateY(0)"
+            : "translateX(-50%) translateY(-12px)",
+          opacity: visible ? 1 : 0,
+          pointerEvents: visible ? "auto" : "none",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "4px 14px 4px 8px",
+          borderRadius: 999,
+          border: "1.5px solid rgba(44,24,16,0.25)",
+          background: "rgba(250,243,225,0.85)",
+          backdropFilter: "blur(6px)",
+          WebkitBackdropFilter: "blur(6px)",
+          boxShadow: "0 4px 14px rgba(44,24,16,0.18)",
+          cursor: "pointer",
+          transition: "opacity 0.18s ease, transform 0.18s ease",
+        }}
+      >
+        <VaseAvatar shape={shape} glaze={glaze} pattern={pattern} size={52} />
+        <span style={{ fontFamily: "var(--font-hand)", fontSize: "0.78rem", color: "#5C3D2E" }}>
+          ↑ your pot
+        </span>
+      </button>
+    </div>
+  );
+}
+
 // ── AvatarBuilder (main export) ───────────────────────────────────────────
 
 export default function AvatarBuilder({
@@ -820,6 +971,8 @@ export default function AvatarBuilder({
   const [face, setFace] = useState<FaceId | string>("happy");
   // edge dial: 0 = round (default) … 1 = fully angular
   const [edge, setEdge] = useState<number>(0);
+  // Manual face size / shape / location adjustment.
+  const [faceT, setFaceT] = useState<FaceTransform>(DEFAULT_FACE_TRANSFORM);
 
   // Shared state
   const [glaze,   setGlaze]   = useState<string>(defaultGlaze as string);
@@ -844,7 +997,7 @@ export default function AvatarBuilder({
 
   // The final shape string to emit
   const shapeValue = mode === "throw"
-    ? encodeThrown2Shape(thrown2H, thrown2Widths, face as FaceId, edge)
+    ? encodeThrown2Shape(thrown2H, thrown2Widths, face as FaceId, edge, faceT)
     : classicShape;
 
   function handleSurprise() {
@@ -855,6 +1008,7 @@ export default function AvatarBuilder({
     setEdge(newEdge);
     setGlaze(newGlaze);
     setFace(newFace);
+    setFaceT(DEFAULT_FACE_TRANSFORM);
   }
 
   function handleReset() {
@@ -862,6 +1016,7 @@ export default function AvatarBuilder({
     setThrown2Widths(DEFAULT_THROWN2_WIDTHS.slice());
     setFace("happy");
     setEdge(0);
+    setFaceT(DEFAULT_FACE_TRANSFORM);
   }
 
   function switchToClassic(id: string) {
@@ -873,8 +1028,26 @@ export default function AvatarBuilder({
     setMode("throw");
   }
 
+  // Sticky mini-pot: show the pill only while the wheel block is off-screen.
+  const wheelBlockRef = useRef<HTMLDivElement>(null);
+  const [wheelOnScreen, setWheelOnScreen] = useState(true);
+  useEffect(() => {
+    const el = wheelBlockRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      ([entry]) => setWheelOnScreen(entry.isIntersecting),
+      { threshold: 0, rootMargin: "-56px 0px 0px 0px" }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  function jumpToWheel() {
+    wheelBlockRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   return (
-    <div className="flex flex-col gap-5">
+    <div className="@container">
       <style>{WHEEL_STYLE}</style>
 
       {/* Hidden inputs for form submission */}
@@ -886,6 +1059,21 @@ export default function AvatarBuilder({
         </>
       )}
 
+      <StickyMiniPreview
+        visible={!wheelOnScreen}
+        shape={shapeValue}
+        glaze={glaze}
+        pattern={pattern}
+        onJump={jumpToWheel}
+      />
+
+      <div className="flex flex-col gap-5 @3xl:grid @3xl:grid-cols-[minmax(0,300px)_minmax(0,1fr)] @3xl:items-start @3xl:gap-x-8">
+      {/* ── Preview column: sticky at @3xl so the pot stays in view ──────── */}
+      <div
+        ref={wheelBlockRef}
+        className="flex flex-col gap-5 @3xl:sticky @3xl:top-6 @3xl:self-start"
+        style={{ scrollMarginTop: 12 }}
+      >
       {/* ── Pottery Wheel (throw mode) ─────────────────────────────────── */}
       {mode === "throw" && (
         <div className="flex flex-col items-center gap-3">
@@ -896,6 +1084,7 @@ export default function AvatarBuilder({
             pattern={pattern}
             face={face}
             edge={edge}
+            faceT={faceT}
             onSculpt={handleSculpt}
             onSculptEnd={handleSculptEnd}
           />
@@ -984,7 +1173,10 @@ export default function AvatarBuilder({
           </button>
         </div>
       )}
+      </div>
 
+      {/* ── Controls column ──────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-5 min-w-0">
       {/* ── Face studio (throw mode only) ────────────────────────────────── */}
       {mode === "throw" && (
         <section>
@@ -1019,6 +1211,9 @@ export default function AvatarBuilder({
             glaze={glaze}
             onFaceChange={setFace}
           />
+          {face !== "none" && (
+            <FaceAdjust faceT={faceT} onChange={setFaceT} />
+          )}
         </section>
       )}
 
@@ -1172,6 +1367,8 @@ export default function AvatarBuilder({
           </div>
         )}
       </section>
+      </div>
+      </div>
     </div>
   );
 }

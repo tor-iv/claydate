@@ -284,7 +284,7 @@ export default function DesignPage() {
           >
             Avatar Builder — Pottery Wheel
           </h2>
-          <WobblyCard className="max-w-md">
+          <WobblyCard className="max-w-md lg:max-w-4xl">
             <AvatarBuilder />
           </WobblyCard>
         </section>

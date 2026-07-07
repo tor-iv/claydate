@@ -376,10 +376,36 @@ export function parseEdge(raw: string | undefined): number {
   return isNaN(num) ? 0 : clamp01(num);
 }
 
+// ── Manual face transform ─────────────────────────────────────────────────
+// Optional fine-tune applied on top of the automatic face placement:
+// s = size multiplier, x/y = horizontal/vertical offset in viewBox px
+// (0 = centered on the body), a = aspect/stretch (0 = round, + = wider, − = taller).
+
+export interface FaceTransform {
+  s: number;
+  x: number;
+  y: number;
+  a: number;
+}
+
+export const DEFAULT_FACE_TRANSFORM: FaceTransform = { s: 1, x: 0, y: 0, a: 0 };
+
+/** Clamp a parsed face-transform into safe ranges. */
+export function clampFaceTransform(t: Partial<FaceTransform>): FaceTransform {
+  const clamp = (v: number, lo: number, hi: number, dflt: number) =>
+    isNaN(v) ? dflt : Math.max(lo, Math.min(hi, v));
+  return {
+    s: clamp(t.s ?? 1, 0.5, 1.8, 1),
+    x: clamp(t.x ?? 0, -12, 12, 0),
+    y: clamp(t.y ?? 0, -14, 14, 0),
+    a: clamp(t.a ?? 0, -0.35, 0.35, 0),
+  };
+}
+
 export type ParsedShape =
   | { kind: "preset"; id: PresetShapeId }
   | { kind: "thrown"; params: ThrownParams; face: FaceId }
-  | { kind: "thrown2"; h: number; widths: number[]; face: FaceId | string; edge: number };
+  | { kind: "thrown2"; h: number; widths: number[]; face: FaceId | string; edge: number; faceT: FaceTransform };
 
 /** Parse an avatar_shape string to either a preset or thrown shape. */
 export function parseShape(shape: string): ParsedShape {
@@ -496,7 +522,15 @@ export function parseShape(shape: string): ParsedShape {
       // Parse edge dial — keyword or 0..1 number, missing → 0 (round)
       const edge = parseEdge(parts["edge"]);
 
-      return { kind: "thrown2", h, widths, face, edge };
+      // Parse optional manual face transform (size/shape/location).
+      const faceT = clampFaceTransform({
+        s: parts["fs"] !== undefined ? parseFloat(parts["fs"]) : 1,
+        x: parts["fx"] !== undefined ? parseFloat(parts["fx"]) : 0,
+        y: parts["fy"] !== undefined ? parseFloat(parts["fy"]) : 0,
+        a: parts["fa"] !== undefined ? parseFloat(parts["fa"]) : 0,
+      });
+
+      return { kind: "thrown2", h, widths, face, edge, faceT };
     } catch {
       return { kind: "preset", id: DEFAULT_AVATAR.shape as PresetShapeId };
     }
@@ -514,7 +548,7 @@ export function canonicalizeShape(shape: string): string {
   }
   if (parsed.kind === "thrown2") {
     // face may be a FaceId or an extended "mii:"/"draw:" string
-    return encodeThrown2Shape(parsed.h, parsed.widths, parsed.face as FaceId | string, parsed.edge);
+    return encodeThrown2Shape(parsed.h, parsed.widths, parsed.face as FaceId | string, parsed.edge, parsed.faceT);
   }
   return encodeThrownShape(parsed.params, parsed.face);
 }
@@ -541,7 +575,8 @@ export function encodeThrown2Shape(
   h: number,
   widths: number[],
   face: FaceId | string,
-  edge: number = 0
+  edge: number = 0,
+  faceT?: FaceTransform
 ): string {
   const hStr = clamp01(h).toFixed(3);
   const wStr = widths.map((w) => clamp01(w).toFixed(3)).join(",");
@@ -550,7 +585,17 @@ export function encodeThrown2Shape(
     ? face
     : (VALID_FACE_IDS.has(face as FaceId) ? face : "none");
   const edgeStr = clamp01(edge).toFixed(2);
-  return `thrown2:h=${hStr};w=${wStr};edge=${edgeStr};face=${faceStr}`;
+  let out = `thrown2:h=${hStr};w=${wStr};edge=${edgeStr};face=${faceStr}`;
+  // Append manual face transform segments only when they deviate from default,
+  // keeping default strings short and old parsers happy (they skip unknown keys).
+  if (faceT) {
+    const t = clampFaceTransform(faceT);
+    if (Math.abs(t.s - 1) > 0.001) out += `;fs=${t.s.toFixed(2)}`;
+    if (Math.abs(t.x) > 0.001)     out += `;fx=${t.x.toFixed(2)}`;
+    if (Math.abs(t.y) > 0.001)     out += `;fy=${t.y.toFixed(2)}`;
+    if (Math.abs(t.a) > 0.001)     out += `;fa=${t.a.toFixed(3)}`;
+  }
+  return out;
 }
 
 /**
