@@ -74,6 +74,62 @@ const WHEEL_STYLE = `
   50%  { opacity: 0.7; }
   100% { opacity: 0.4; }
 }
+
+/* ── Customizer stage (narrow containers only) ──────────────────────────
+   The builder becomes a fixed-height stage: pot on top at full size, all
+   options in a slide-up drawer (absolute inside the stage — position:fixed
+   is broken under the @container root). The @container block below undoes
+   everything at @3xl, where the two-column grid takes over. */
+.pot-stage {
+  position: relative;
+  height: min(86vh, 760px);
+  height: min(86dvh, 760px);
+  overflow: hidden;
+}
+.pot-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 42%;
+  display: flex;
+  flex-direction: column;
+  background: rgba(250, 243, 225, 0.97);
+  border: 1.5px solid rgba(44, 24, 16, 0.25);
+  border-bottom: none;
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -6px 24px rgba(44, 24, 16, 0.18);
+  z-index: 20;
+}
+.pot-sheet-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 0 7px;
+  cursor: grab;
+  touch-action: none;
+  flex-shrink: 0;
+}
+.pot-sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px 10px 14px;
+}
+@container (min-width: 48rem) {
+  .pot-stage { height: auto; overflow: visible; }
+  .pot-sheet {
+    position: static;
+    height: auto !important;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    z-index: auto;
+  }
+  .pot-sheet-grip { display: none; }
+  .pot-sheet-body { flex: none; overflow: visible; padding: 0; }
+}
 `;
 
 // Slightly randomize params for "surprise me" (thrown2)
@@ -1026,136 +1082,6 @@ function FaceAdjust({
   );
 }
 
-// ── StickyMiniPreview ──────────────────────────────────────────────────────
-// The whole pot, live, pinned to the top of the viewport once the wheel
-// scrolls away (narrow containers only — hidden at @3xl where the wheel
-// column is sticky instead). Tap = jump back to the wheel. Press-and-hold =
-// peek: the pot blows up full-size over the controls until released.
-// Zero-height rail so it never shifts layout. The pinned card must stay
-// `sticky` (not `fixed`): the builder root is a size container, which makes
-// it the containing block for fixed children — the peek overlay escapes via
-// a portal to <body> instead.
-const PEEK_HOLD_MS = 220;
-
-function StickyMiniPreview({
-  visible,
-  shape,
-  glaze,
-  pattern,
-  onJump,
-}: {
-  visible: boolean;
-  shape: string;
-  glaze: string;
-  pattern: string;
-  onJump: () => void;
-}) {
-  const [peek, setPeek] = useState(false);
-  const [mounted, setMounted] = useState(false);
-  const holdTimerRef = useRef<number | null>(null);
-  const didPeekRef = useRef(false);
-  useEffect(() => setMounted(true), []);
-
-  function clearHoldTimer() {
-    if (holdTimerRef.current !== null) {
-      window.clearTimeout(holdTimerRef.current);
-      holdTimerRef.current = null;
-    }
-  }
-
-  function handlePointerDown(e: React.PointerEvent<HTMLButtonElement>) {
-    e.preventDefault();
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* best-effort */ }
-    didPeekRef.current = false;
-    clearHoldTimer();
-    holdTimerRef.current = window.setTimeout(() => {
-      didPeekRef.current = true;
-      setPeek(true);
-    }, PEEK_HOLD_MS);
-  }
-
-  function handlePointerUp() {
-    clearHoldTimer();
-    if (didPeekRef.current) {
-      setPeek(false);
-    } else {
-      onJump();
-    }
-  }
-
-  function handlePointerCancel() {
-    clearHoldTimer();
-    setPeek(false);
-  }
-
-  return (
-    <div className="sticky z-30 h-0 @3xl:hidden" style={{ top: 8 }}>
-      <button
-        type="button"
-        onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerCancel}
-        aria-label="Tap to show the pottery wheel, hold to see your pot full size"
-        aria-hidden={!visible}
-        tabIndex={visible ? 0 : -1}
-        style={{
-          position: "absolute",
-          left: "50%",
-          transform: visible
-            ? "translateX(-50%) translateY(0)"
-            : "translateX(-50%) translateY(-16px)",
-          opacity: visible ? 1 : 0,
-          pointerEvents: visible ? "auto" : "none",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "6px 6px 3px",
-          borderRadius: 20,
-          border: "1.5px solid rgba(44,24,16,0.25)",
-          background: "rgba(250,243,225,0.88)",
-          backdropFilter: "blur(6px)",
-          WebkitBackdropFilter: "blur(6px)",
-          boxShadow: "0 4px 14px rgba(44,24,16,0.18)",
-          cursor: "pointer",
-          touchAction: "none",
-          userSelect: "none",
-          WebkitUserSelect: "none",
-          transition: "opacity 0.18s ease, transform 0.18s ease",
-        }}
-      >
-        <VaseAvatar shape={shape} glaze={glaze} pattern={pattern} size={104} />
-        <span style={{ fontFamily: "var(--font-hand)", fontSize: "0.62rem", color: "rgba(92,61,46,0.65)" }}>
-          hold to zoom
-        </span>
-      </button>
-
-      {/* Full-size peek overlay while held */}
-      {mounted && peek &&
-        createPortal(
-          <div
-            aria-hidden="true"
-            style={{
-              position: "fixed",
-              inset: 0,
-              zIndex: 90,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "rgba(245,240,232,0.92)",
-              backdropFilter: "blur(4px)",
-              WebkitBackdropFilter: "blur(4px)",
-              pointerEvents: "none",
-            }}
-          >
-            <VaseAvatar shape={shape} glaze={glaze} pattern={pattern} size={Math.min(340, typeof window !== "undefined" ? window.innerWidth - 60 : 340)} />
-          </div>,
-          document.body
-        )}
-    </div>
-  );
-}
-
 // ── AvatarBuilder (main export) ───────────────────────────────────────────
 
 export default function AvatarBuilder({
@@ -1233,23 +1159,99 @@ export default function AvatarBuilder({
     setMode("throw");
   }
 
-  // Sticky mini-pot: show the pill only while the wheel block is off-screen.
-  const wheelBlockRef = useRef<HTMLDivElement>(null);
-  const [wheelOnScreen, setWheelOnScreen] = useState(true);
-  useEffect(() => {
-    const el = wheelBlockRef.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver(
-      ([entry]) => setWheelOnScreen(entry.isIntersecting),
-      { threshold: 0, rootMargin: "-56px 0px 0px 0px" }
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
+  // ── Options drawer (narrow containers) ─────────────────────────────────
+  // The controls live in a slide-up sheet over the stage; snap points are
+  // collapsed (grip only), half, and tall. Height in px via inline style;
+  // the @3xl CSS resets it with height:auto !important.
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [sheetPx, setSheetPx] = useState<number | null>(null); // null → 42% CSS fallback
+  // curH lives in the ref: pointerup can fire before React re-renders the
+  // state from the last pointermove, so state would be stale for fast flicks.
+  const sheetDragRef = useRef<{ startY: number; startH: number; curH: number; moved: boolean } | null>(null);
+  const SHEET_COLLAPSED = 56;
 
-  function jumpToWheel() {
-    wheelBlockRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  function sheetSnaps(): number[] {
+    const h = stageRef.current?.clientHeight ?? 700;
+    return [SHEET_COLLAPSED, Math.round(h * 0.42), Math.round(h * 0.76)];
   }
+
+  function handleGripPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* best-effort */ }
+    const startH = sheetPx ?? sheetSnaps()[1];
+    sheetDragRef.current = {
+      startY: e.clientY,
+      startH,
+      curH: startH,
+      moved: false,
+    };
+  }
+
+  function handleGripPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const d = sheetDragRef.current;
+    if (!d) return;
+    const dy = e.clientY - d.startY;
+    if (Math.abs(dy) > 5) d.moved = true;
+    const stageH = stageRef.current?.clientHeight ?? 700;
+    d.curH = Math.min(Math.round(stageH * 0.8), Math.max(SHEET_COLLAPSED, Math.round(d.startH - dy)));
+    setSheetPx(d.curH);
+  }
+
+  function handleGripPointerUp() {
+    const d = sheetDragRef.current;
+    sheetDragRef.current = null;
+    if (!d) return;
+    const snaps = sheetSnaps();
+    if (!d.moved) {
+      // Tap toggles half ↔ collapsed
+      setSheetPx(d.curH <= SHEET_COLLAPSED + 4 ? snaps[1] : SHEET_COLLAPSED);
+      return;
+    }
+    setSheetPx(snaps.reduce((a, b) => (Math.abs(b - d.curH) < Math.abs(a - d.curH) ? b : a)));
+  }
+
+  // Surprise/start-over: under the wheel on wide layouts, at the top of the
+  // options drawer on narrow ones (rendered twice, visibility-gated — the
+  // handlers are shared so this is safe).
+  const potTools = mode === "throw" && (
+    <div className="flex gap-2 flex-wrap justify-center">
+      <button
+        type="button"
+        onClick={handleSurprise}
+        style={{
+          fontFamily: "var(--font-hand)",
+          fontSize: "0.85rem",
+          color: "#2C1810",
+          background: "rgba(212,168,64,0.18)",
+          border: "1.5px solid rgba(44,24,16,0.3)",
+          borderRadius: 8,
+          padding: "4px 12px",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+        }}
+      >
+        <DoodleIcon name="sparkle" size={14} color="#2C1810" /> surprise me
+      </button>
+      <button
+        type="button"
+        onClick={handleReset}
+        style={{
+          fontFamily: "var(--font-hand)",
+          fontSize: "0.85rem",
+          color: "#5C3D2E",
+          background: "rgba(232,213,176,0.4)",
+          border: "1.5px solid rgba(44,24,16,0.2)",
+          borderRadius: 8,
+          padding: "4px 12px",
+          cursor: "pointer",
+        }}
+      >
+        ↺ start over
+      </button>
+    </div>
+  );
 
   return (
     <div className="@container">
@@ -1264,21 +1266,12 @@ export default function AvatarBuilder({
         </>
       )}
 
-      <StickyMiniPreview
-        visible={!wheelOnScreen}
-        shape={shapeValue}
-        glaze={glaze}
-        pattern={pattern}
-        onJump={jumpToWheel}
-      />
-
-      <div className="flex flex-col gap-5 @3xl:grid @3xl:grid-cols-[minmax(0,300px)_minmax(0,1fr)] @3xl:items-start @3xl:gap-x-8">
-      {/* ── Preview column: sticky at @3xl so the pot stays in view ──────── */}
       <div
-        ref={wheelBlockRef}
-        className="flex flex-col gap-5 @3xl:sticky @3xl:top-6 @3xl:self-start"
-        style={{ scrollMarginTop: 12 }}
+        ref={stageRef}
+        className="pot-stage flex flex-col gap-5 @3xl:grid @3xl:grid-cols-[minmax(0,300px)_minmax(0,1fr)] @3xl:items-start @3xl:gap-x-8"
       >
+      {/* ── Preview column: sticky at @3xl so the pot stays in view ──────── */}
+      <div className="flex flex-col gap-5 @3xl:sticky @3xl:top-6 @3xl:self-start">
       {/* ── Pottery Wheel (throw mode) ─────────────────────────────────── */}
       {mode === "throw" && (
         <div className="flex flex-col items-center gap-3">
@@ -1332,43 +1325,9 @@ export default function AvatarBuilder({
             </div>
           )}
 
-          {/* Action buttons */}
-          <div className="flex gap-2 flex-wrap justify-center">
-            <button
-              type="button"
-              onClick={handleSurprise}
-              style={{
-                fontFamily: "var(--font-hand)",
-                fontSize: "0.85rem",
-                color: "#2C1810",
-                background: "rgba(212,168,64,0.18)",
-                border: "1.5px solid rgba(44,24,16,0.3)",
-                borderRadius: 8,
-                padding: "4px 12px",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-              }}
-            >
-              <DoodleIcon name="sparkle" size={14} color="#2C1810" /> surprise me
-            </button>
-            <button
-              type="button"
-              onClick={handleReset}
-              style={{
-                fontFamily: "var(--font-hand)",
-                fontSize: "0.85rem",
-                color: "#5C3D2E",
-                background: "rgba(232,213,176,0.4)",
-                border: "1.5px solid rgba(44,24,16,0.2)",
-                borderRadius: 8,
-                padding: "4px 12px",
-                cursor: "pointer",
-              }}
-            >
-              ↺ start over
-            </button>
+          {/* Action buttons live here on wide layouts only */}
+          <div className="hidden @3xl:flex flex-col items-center gap-3 w-full">
+            {potTools}
           </div>
         </div>
       )}
@@ -1418,8 +1377,32 @@ export default function AvatarBuilder({
       )}
       </div>
 
-      {/* ── Controls column ──────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-5 min-w-0">
+      {/* ── Controls column: slide-up drawer on narrow containers ────────── */}
+      <div
+        className="pot-sheet min-w-0"
+        style={sheetPx !== null ? { height: sheetPx } : undefined}
+      >
+      {/* Drawer grip — drag to resize, tap to toggle (hidden at @3xl) */}
+      <div
+        className="pot-sheet-grip"
+        role="button"
+        aria-label="Drag to resize the options drawer"
+        onPointerDown={handleGripPointerDown}
+        onPointerMove={handleGripPointerMove}
+        onPointerUp={handleGripPointerUp}
+        onPointerCancel={handleGripPointerUp}
+      >
+        <div style={{ width: 44, height: 5, borderRadius: 999, background: "rgba(44,24,16,0.3)" }} />
+      </div>
+
+      <div className="pot-sheet-body flex flex-col gap-5">
+      {/* Action buttons live here on narrow layouts only */}
+      {mode === "throw" && (
+        <div className="flex flex-col items-center gap-3 @3xl:hidden">
+          {potTools}
+        </div>
+      )}
+
       {/* ── Face studio (throw mode only) ────────────────────────────────── */}
       {mode === "throw" && (
         <section>
@@ -1610,6 +1593,7 @@ export default function AvatarBuilder({
           </div>
         )}
       </section>
+      </div>
       </div>
       </div>
     </div>
