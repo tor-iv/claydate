@@ -322,7 +322,6 @@ function WheelVasePreview({
     setIsDragging(false);
   }
 
-  const N = widths.length;
   const shapeStr = encodeThrown2Shape(h, widths, face as FaceId, edge, faceT);
 
   return (
@@ -391,7 +390,7 @@ function WheelVasePreview({
           </svg>
         </div>
 
-        {/* Band count indicator */}
+        {/* Sculpt affordance — jargon-free, fades once you're doing it */}
         <div
           style={{
             position: "absolute",
@@ -405,11 +404,12 @@ function WheelVasePreview({
             borderRadius: 4,
             padding: "1px 5px",
             pointerEvents: "none",
-            opacity: isDragging ? 0.6 : 0.9,
+            opacity: isDragging ? 0 : 0.9,
+            transition: "opacity 0.2s",
             zIndex: 10,
           }}
         >
-          {N} bands
+          {dragMode === "face" ? "drag the face" : "touch & drag to sculpt"}
         </div>
       </div>
 
@@ -466,7 +466,7 @@ function WheelVasePreview({
       >
         {dragMode === "face"
           ? (isDragging ? "placing…" : "drag the face into place")
-          : (isDragging ? "shaping…" : "↕ height  ↔ band width")}
+          : (isDragging ? "shaping…" : "↕ taller  ↔ wider")}
       </p>
     </div>
   );
@@ -778,10 +778,9 @@ function FaceStudio({
   glaze: string;
   onFaceChange: (f: FaceId | string) => void;
 }) {
-  // Determine active tab from the current face type
-  const defaultTab = typeof face === "string" && face.startsWith("draw:") ? "doodle" : "build";
-  const [tab, setTab] = useState<"build" | "doodle">(defaultTab);
-  const glazeHex = resolveGlaze(glaze);
+  // Always start on Build — the Doodle tab opens a pop-out, which shouldn't
+  // appear uninvited on mount even when the current face is a drawing.
+  const [tab, setTab] = useState<"build" | "doodle">("build");
 
   // Parse mii state from face prop (or fall back to defaults)
   const initMii: MiiFace = typeof face === "string" && face.startsWith("mii:")
@@ -801,6 +800,16 @@ function FaceStudio({
     const next = { ...mii, ...update };
     setMii(next);
     onFaceChange(encodeMiiFace(next));
+  }
+
+  // Ink color is shared: it recolors a mii face, but on a drawn face it only
+  // sets the brush for FUTURE strokes — it must never replace the drawing.
+  function handleInkChange(hex: string) {
+    if (typeof face === "string" && face.startsWith("draw:")) {
+      setMii((prev) => ({ ...prev, ink: hex }));
+    } else {
+      updateMii({ ink: hex });
+    }
   }
 
   function handleDrawChange(encoding: string) {
@@ -827,17 +836,11 @@ function FaceStudio({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {/* Tab toggle */}
+      {/* Tab toggle — switching tabs never wipes the current face */}
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
         <button
           type="button"
-          onClick={() => {
-            setTab("build");
-            // If currently a draw face, switch to mii
-            if (typeof face !== "string" || !face.startsWith("mii:")) {
-              onFaceChange(encodeMiiFace(mii));
-            }
-          }}
+          onClick={() => setTab("build")}
           style={{ ...pillBase, ...(tab === "build" ? pillActive : pillInactive) }}
           aria-pressed={tab === "build"}
         >
@@ -845,13 +848,7 @@ function FaceStudio({
         </button>
         <button
           type="button"
-          onClick={() => {
-            setTab("doodle");
-            // If currently a mii/preset face, don't wipe — just switch display
-            if (typeof face === "string" && !face.startsWith("draw:")) {
-              onFaceChange("none");
-            }
-          }}
+          onClick={() => setTab("doodle")}
           style={{ ...pillBase, ...(tab === "doodle" ? pillActive : pillInactive) }}
           aria-pressed={tab === "doodle"}
         >
@@ -859,67 +856,69 @@ function FaceStudio({
         </button>
       </div>
 
+      {/* Ink color — shared: recolors the mii face AND sets the doodle brush.
+          On a drawn face it only changes the brush for new strokes, so it
+          never wipes an existing doodle. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <span style={{ fontFamily: "var(--font-hand)", fontSize: "0.75rem", color: "var(--color-clay-ink-muted)", paddingLeft: 2 }}>
+          Ink Color
+        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          {FACE_PALETTE.map((c) => {
+            const isActive = mii.ink === c.hex;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                title={c.label}
+                aria-label={c.label}
+                aria-pressed={isActive}
+                onClick={() => handleInkChange(c.hex)}
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: "50%",
+                  background: c.hex,
+                  border: isActive ? "2.5px solid #2C1810" : "1.5px solid rgba(44,24,16,0.22)",
+                  transform: isActive ? "scale(1.2)" : "scale(1)",
+                  cursor: "pointer",
+                  boxShadow: isActive ? "0 0 0 2px rgba(44,24,16,0.14)" : "none",
+                  transition: "transform 0.1s",
+                  flexShrink: 0,
+                }}
+              />
+            );
+          })}
+          {/* Custom ink color */}
+          <label
+            title="Custom ink color"
+            style={{
+              position: "relative",
+              width: 24,
+              height: 24,
+              borderRadius: "50%",
+              background: `conic-gradient(#2C1810, #B84C2A, #5B8EC4, #D4847A, #6B8F6A, #C9901A, #2C1810)`,
+              border: FACE_PALETTE.every((c) => c.hex !== mii.ink) ? "2.5px solid #2C1810" : "1.5px solid rgba(44,24,16,0.3)",
+              cursor: "pointer",
+              overflow: "hidden",
+              flexShrink: 0,
+            }}
+          >
+            <input
+              type="color"
+              value={mii.ink}
+              onChange={(e) => handleInkChange(e.target.value)}
+              style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%", height: "100%", padding: 0, border: "none" }}
+              aria-label="Custom ink color"
+            />
+          </label>
+        </div>
+      </div>
+
       {/* Build tab */}
       {tab === "build" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <PartCarousel mii={mii} updateMii={updateMii} />
-
-          {/* Ink color row */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontFamily: "var(--font-hand)", fontSize: "0.75rem", color: "var(--color-clay-ink-muted)", paddingLeft: 2 }}>
-              Ink Color
-            </span>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-              {FACE_PALETTE.map((c) => {
-                const isActive = mii.ink === c.hex;
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    title={c.label}
-                    aria-label={c.label}
-                    aria-pressed={isActive}
-                    onClick={() => updateMii({ ink: c.hex })}
-                    style={{
-                      width: 24,
-                      height: 24,
-                      borderRadius: "50%",
-                      background: c.hex,
-                      border: isActive ? "2.5px solid #2C1810" : "1.5px solid rgba(44,24,16,0.22)",
-                      transform: isActive ? "scale(1.2)" : "scale(1)",
-                      cursor: "pointer",
-                      boxShadow: isActive ? "0 0 0 2px rgba(44,24,16,0.14)" : "none",
-                      transition: "transform 0.1s",
-                      flexShrink: 0,
-                    }}
-                  />
-                );
-              })}
-              {/* Custom ink color */}
-              <label
-                title="Custom ink color"
-                style={{
-                  position: "relative",
-                  width: 24,
-                  height: 24,
-                  borderRadius: "50%",
-                  background: `conic-gradient(#2C1810, #B84C2A, #5B8EC4, #D4847A, #6B8F6A, #C9901A, #2C1810)`,
-                  border: FACE_PALETTE.every((c) => c.hex !== mii.ink) ? "2.5px solid #2C1810" : "1.5px solid rgba(44,24,16,0.3)",
-                  cursor: "pointer",
-                  overflow: "hidden",
-                  flexShrink: 0,
-                }}
-              >
-                <input
-                  type="color"
-                  value={mii.ink}
-                  onChange={(e) => updateMii({ ink: e.target.value })}
-                  style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%", height: "100%", padding: 0, border: "none" }}
-                  aria-label="Custom ink color"
-                />
-              </label>
-            </div>
-          </div>
 
           {/* No-face button */}
           <button
@@ -949,7 +948,7 @@ function FaceStudio({
         <DrawPopout title="doodle a face" onClose={() => setTab("build")}>
           <FaceDrawPad
             onChange={handleDrawChange}
-            glazeColor={glazeHex}
+            brushColor={mii.ink}
             initialStrokes={
               typeof face === "string" && face.startsWith("draw:")
                 ? parseFaceDrawing(face)

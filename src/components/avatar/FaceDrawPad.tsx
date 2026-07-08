@@ -9,23 +9,12 @@ interface FaceDrawPadProps {
   onChange: (faceEncoding: string) => void;
   /** Initial strokes to populate (decoded from face string) */
   initialStrokes?: DrawStroke[];
-  /** Current glaze hex for including in the color palette */
-  glazeColor?: string;
+  /** Brush color — controlled by the shared Ink Color section outside the pad */
+  brushColor?: string;
 }
 
-const PAD_SIZE = 160; // px square canvas (larger than before)
+const PAD_SIZE = 240; // px square canvas
 const DEFAULT_INK = "#2C1810";
-
-// ── Built-in palette ───────────────────────────────────────────────────────
-const PALETTE_COLORS = [
-  { id: "ink",    hex: "#2C1810", label: "Ink" },
-  { id: "rust",   hex: "#B84C2A", label: "Rust" },
-  { id: "sky",    hex: "#5B8EC4", label: "Sky" },
-  { id: "blush",  hex: "#D4847A", label: "Blush" },
-  { id: "sage",   hex: "#6B8F6A", label: "Sage" },
-  { id: "honey",  hex: "#C9901A", label: "Honey" },
-  { id: "white",  hex: "#F5F0E8", label: "White" },
-];
 
 // ── Stroke simplification (Ramer-Douglas-Peucker) ─────────────────────────
 function vecDist(ax: number, ay: number, bx: number, by: number): number {
@@ -80,20 +69,20 @@ const BRUSH_STORED_WIDTH: Record<Exclude<BrushMode, "eraser">, number> = {
   thick:  8,
 };
 
-export default function FaceDrawPad({ onChange, initialStrokes = [], glazeColor }: FaceDrawPadProps) {
+export default function FaceDrawPad({ onChange, initialStrokes = [], brushColor }: FaceDrawPadProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [strokes, setStrokes] = useState<DrawStroke[]>(initialStrokes);
   const [brushMode, setBrushMode] = useState<BrushMode>("thin");
-  const [activeColor, setActiveColor] = useState<string>(DEFAULT_INK);
-  const [customColor, setCustomColor] = useState<string>(DEFAULT_INK);
   const currentStrokeRef = useRef<number[]>([]);
   const isDrawingRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
 
-  // Build palette including glaze color if provided
-  const palette = glazeColor
-    ? [...PALETTE_COLORS, { id: "glaze", hex: glazeColor, label: "Glaze" }]
-    : PALETTE_COLORS;
+  // Brush color comes from the shared Ink Color section; picking a color
+  // there while erasing switches back to drawing.
+  const activeColor = brushColor ?? DEFAULT_INK;
+  useEffect(() => {
+    setBrushMode((prev) => (prev === "eraser" ? "thin" : prev));
+  }, [activeColor]);
 
   // ── Canvas rendering ─────────────────────────────────────────────────────
 
@@ -329,92 +318,6 @@ export default function FaceDrawPad({ onChange, initialStrokes = [], glazeColor 
         gap: 10,
       }}
     >
-      {/* ── Color palette ─────────────────────────────────────────────── */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 5,
-          flexWrap: "wrap",
-          justifyContent: "center",
-        }}
-      >
-        {palette.map((c) => {
-          const isActive = !isEraser && activeColor === c.hex;
-          return (
-            <button
-              key={c.id}
-              type="button"
-              title={c.label}
-              aria-label={c.label}
-              aria-pressed={isActive}
-              onClick={() => {
-                setActiveColor(c.hex);
-                setBrushMode((prev) => prev === "eraser" ? "thin" : prev);
-              }}
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: "50%",
-                background: c.hex,
-                border: isActive ? "2.5px solid #2C1810" : "1.5px solid rgba(44,24,16,0.22)",
-                transform: isActive ? "scale(1.22)" : "scale(1)",
-                cursor: "pointer",
-                flexShrink: 0,
-                boxShadow: isActive ? "0 0 0 2px rgba(44,24,16,0.14)" : "none",
-                transition: "transform 0.1s, box-shadow 0.1s",
-                // White swatch needs a visible border
-                outline: c.hex === "#F5F0E8" ? "1px solid rgba(44,24,16,0.25)" : undefined,
-                outlineOffset: c.hex === "#F5F0E8" ? "-1px" : undefined,
-              }}
-            />
-          );
-        })}
-
-        {/* Custom color input */}
-        <label
-          title="Custom color"
-          aria-label="Custom color"
-          style={{
-            position: "relative",
-            width: 22,
-            height: 22,
-            borderRadius: "50%",
-            background: `conic-gradient(#C1622E, #C9901A, #6B8F6A, #5B8EC4, #D4847A, #C1622E)`,
-            border: (!isEraser && !palette.some((c) => c.hex === activeColor))
-              ? "2.5px solid #2C1810"
-              : "1.5px solid rgba(44,24,16,0.3)",
-            cursor: "pointer",
-            overflow: "hidden",
-            flexShrink: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <input
-            type="color"
-            value={customColor}
-            onChange={(e) => {
-              setCustomColor(e.target.value);
-              setActiveColor(e.target.value);
-              setBrushMode((prev) => prev === "eraser" ? "thin" : prev);
-            }}
-            style={{
-              position: "absolute",
-              inset: 0,
-              opacity: 0,
-              cursor: "pointer",
-              width: "100%",
-              height: "100%",
-              padding: 0,
-              border: "none",
-            }}
-            aria-label="Custom color picker"
-          />
-        </label>
-      </div>
-
       {/* ── Canvas ────────────────────────────────────────────────────── */}
       <div
         style={{
