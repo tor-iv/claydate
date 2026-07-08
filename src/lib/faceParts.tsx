@@ -264,14 +264,19 @@ export const MOUTH_PARTS: FacePart[] = [
           d={`M ${cx - 2.6 * s} ${cy + 1.8 * s} Q ${cx} ${cy + 4.2 * s} ${cx + 2.6 * s} ${cy + 1.8 * s}`}
           stroke={ink} strokeWidth={1.0 * s} fill="none" strokeLinecap="round"
         />
-        {/* Tongue sticking out past the smile */}
-        <ellipse
-          cx={cx + 0.8 * s} cy={cy + 4.2 * s} rx={1.9 * s} ry={1.5 * s}
-          fill="#E0766A" stroke={ink} strokeWidth={0.55 * s}
+        {/* Tongue sticking out past the smile — U shape, open at the mouth */}
+        <path
+          d={`M ${cx - 0.9 * s} ${cy + 2.6 * s}
+              L ${cx - 0.9 * s} ${cy + 4.0 * s}
+              Q ${cx - 0.9 * s} ${cy + 5.6 * s} ${cx + 0.6 * s} ${cy + 5.6 * s}
+              Q ${cx + 2.1 * s} ${cy + 5.6 * s} ${cx + 2.1 * s} ${cy + 4.0 * s}
+              L ${cx + 2.1 * s} ${cy + 3.1 * s}
+              Z`}
+          fill="#E0766A" stroke={ink} strokeWidth={0.55 * s} strokeLinejoin="round"
         />
         {/* Center crease */}
         <path
-          d={`M ${cx + 0.8 * s} ${cy + 3.2 * s} Q ${cx + 0.9 * s} ${cy + 4.2 * s} ${cx + 0.8 * s} ${cy + 5.1 * s}`}
+          d={`M ${cx + 0.6 * s} ${cy + 3.4 * s} L ${cx + 0.6 * s} ${cy + 5.0 * s}`}
           stroke={ink} strokeWidth={0.45 * s} fill="none" strokeLinecap="round" strokeOpacity={0.65}
         />
       </g>

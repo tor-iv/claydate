@@ -122,16 +122,17 @@ export default function FaceDrawPad({ onChange, initialStrokes = [], glazeColor 
       ctx.strokeStyle = color;
       ctx.lineWidth = canvasPx;
       ctx.beginPath();
-      ctx.moveTo(
-        (pts[0] / 100) * PAD_SIZE,
-        (pts[1] / 100) * PAD_SIZE
-      );
-      for (let i = 2; i + 1 < pts.length; i += 2) {
-        ctx.lineTo(
-          (pts[i]     / 100) * PAD_SIZE,
-          (pts[i + 1] / 100) * PAD_SIZE
-        );
+      // Smooth the simplified points with quadratics through midpoints, so
+      // stored strokes redraw as flowing lines rather than visible corners.
+      const px = (i: number) => (pts[i] / 100) * PAD_SIZE;
+      ctx.moveTo(px(0), px(1));
+      let i = 2;
+      for (; i + 3 < pts.length; i += 2) {
+        const midX = (px(i) + px(i + 2)) / 2;
+        const midY = (px(i + 1) + px(i + 3)) / 2;
+        ctx.quadraticCurveTo(px(i), px(i + 1), midX, midY);
       }
+      if (i + 1 < pts.length) ctx.lineTo(px(i), px(i + 1));
       ctx.stroke();
     }
   }, []);
@@ -182,7 +183,7 @@ export default function FaceDrawPad({ onChange, initialStrokes = [], glazeColor 
 
   function handlePointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
     e.preventDefault();
-    canvasRef.current?.setPointerCapture(e.pointerId);
+    try { canvasRef.current?.setPointerCapture(e.pointerId); } catch { /* capture is best-effort */ }
     const { x, y } = getCanvasPos(e);
 
     if (brushMode === "eraser") {

@@ -76,6 +76,31 @@ function getLightness(hex: string): number {
 }
 
 /**
+ * Turn a sampled freehand stroke into a smooth SVG path: straight lines are
+ * replaced by quadratics through segment midpoints, so the sparse RDP-
+ * simplified points render as one flowing line instead of visible corners.
+ */
+function smoothStrokePath(pts: { x: number; y: number }[]): string {
+  if (pts.length === 0) return "";
+  if (pts.length === 1) {
+    // Single dot — tiny line so the round cap paints it
+    return `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)} l 0.01 0`;
+  }
+  if (pts.length === 2) {
+    return `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)} L ${pts[1].x.toFixed(2)} ${pts[1].y.toFixed(2)}`;
+  }
+  let d = `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const midX = (pts[i].x + pts[i + 1].x) / 2;
+    const midY = (pts[i].y + pts[i + 1].y) / 2;
+    d += ` Q ${pts[i].x.toFixed(2)} ${pts[i].y.toFixed(2)} ${midX.toFixed(2)} ${midY.toFixed(2)}`;
+  }
+  const last = pts[pts.length - 1];
+  d += ` L ${last.x.toFixed(2)} ${last.y.toFixed(2)}`;
+  return d;
+}
+
+/**
  * Render a face onto the vase at the given position.
  * cx/cy = center of face area; scale = size factor.
  * Supports preset faces, mii: part-based faces, and draw: freehand faces.
@@ -105,11 +130,12 @@ function FaceOverlay({
       <g>
         {strokes.map((stroke, si) => {
           if (stroke.points.length < 4) return null;
-          const pts: string[] = [];
+          const pts: { x: number; y: number }[] = [];
           for (let i = 0; i + 1 < stroke.points.length; i += 2) {
-            const fx = (stroke.points[i]     / 100) * zoneW - zoneW / 2 + cx;
-            const fy = (stroke.points[i + 1] / 100) * zoneH - zoneH / 2 + cy;
-            pts.push(`${fx.toFixed(2)},${fy.toFixed(2)}`);
+            pts.push({
+              x: (stroke.points[i]     / 100) * zoneW - zoneW / 2 + cx,
+              y: (stroke.points[i + 1] / 100) * zoneH - zoneH / 2 + cy,
+            });
           }
           // Per-stroke color + width, default to ink + 1px
           const strokeColor = stroke.color ?? DEFAULT_INK;
@@ -118,9 +144,9 @@ function FaceOverlay({
           // Map: width 1 → 1.2 SVG units at scale=1, width 9 → ~5 units
           const svgWidth = (0.8 + refWidth * 0.45) * scale;
           return (
-            <polyline
+            <path
               key={si}
-              points={pts.join(" ")}
+              d={smoothStrokePath(pts)}
               stroke={strokeColor}
               strokeWidth={svgWidth}
               fill="none"

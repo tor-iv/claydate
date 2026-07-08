@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import VaseAvatar from "./VaseAvatar";
 import FaceDrawPad from "./FaceDrawPad";
 import {
@@ -25,6 +26,7 @@ import {
   MII_ACCESSORY_IDS,
   resolveGlaze,
   DEFAULT_FACE_TRANSFORM,
+  clampFaceTransform,
 } from "@/lib/avatars";
 import type {
   AvatarShape,
@@ -127,10 +129,13 @@ interface WheelVasePreviewProps {
   face: FaceId | string;
   edge: number;
   faceT?: FaceTransform;
+  /** What dragging the wheel does: sculpt the pot walls or move the face. */
+  dragMode?: "shape" | "face";
   /** Live sculpt during a drag: set height + widths together, no band-count resample. */
   onSculpt: (h: number, widths: number[]) => void;
   /** Drag released: settle the band count to the height's natural value. */
   onSculptEnd: () => void;
+  onFaceTChange?: (t: FaceTransform) => void;
 }
 
 function WheelVasePreview({
@@ -141,8 +146,10 @@ function WheelVasePreview({
   face,
   edge,
   faceT,
+  dragMode = "shape",
   onSculpt,
   onSculptEnd,
+  onFaceTChange,
 }: WheelVasePreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
@@ -151,6 +158,7 @@ function WheelVasePreview({
     startY: number;
     startH: number;
     startWidths: number[];
+    startFaceT: FaceTransform;
     activeBandIndex: number;
     relYAtDown: number;
     hasDragged: boolean;
@@ -160,6 +168,7 @@ function WheelVasePreview({
     startY: 0,
     startH: h,
     startWidths: widths.slice(),
+    startFaceT: faceT ?? DEFAULT_FACE_TRANSFORM,
     activeBandIndex: 0,
     relYAtDown: 0.5,
     hasDragged: false,
@@ -199,6 +208,7 @@ function WheelVasePreview({
       startY: e.clientY,
       startH: h,
       startWidths: widths.slice(),
+      startFaceT: faceT ?? DEFAULT_FACE_TRANSFORM,
       activeBandIndex,
       relYAtDown: relY,
       hasDragged: false,
@@ -220,6 +230,22 @@ function WheelVasePreview({
     if (!dragRef.current.hasDragged) return;
 
     e.preventDefault();
+
+    // Face mode: the drag repositions the face on the pot instead of
+    // sculpting. Screen px → 64-unit viewBox px (the vase SVG is
+    // PREVIEW_SIZE - 20 on screen); clampFaceTransform bounds the offsets.
+    if (dragMode === "face" && onFaceTChange) {
+      const pxToViewBox = 64 / (PREVIEW_SIZE - 20);
+      const start = dragRef.current.startFaceT;
+      onFaceTChange(
+        clampFaceTransform({
+          ...start,
+          x: start.x + totalDx * pxToViewBox,
+          y: start.y + totalDy * pxToViewBox,
+        })
+      );
+      return;
+    }
 
     const startWidths = dragRef.current.startWidths;
     const startBands = startWidths.length;
@@ -262,7 +288,7 @@ function WheelVasePreview({
     dragRef.current.hasDragged = false;
     setIsDragging(false);
     // Settle the band count to the final height's natural value once, on release.
-    if (didDrag) onSculptEnd();
+    if (didDrag && dragMode === "shape") onSculptEnd();
   }
 
   function handlePointerCancel() {
@@ -294,7 +320,7 @@ function WheelVasePreview({
           justifyContent: "center",
         }}
         role="img"
-        aria-label="Drag to sculpt your vase"
+        aria-label={dragMode === "face" ? "Drag to move the face" : "Drag to sculpt your vase"}
       >
         {/* Vase avatar */}
         <div style={{ position: "relative", zIndex: 2 }}>
@@ -413,7 +439,9 @@ function WheelVasePreview({
           transition: "opacity 0.15s",
         }}
       >
-        {isDragging ? "shaping…" : "↕ height  ↔ band width"}
+        {dragMode === "face"
+          ? (isDragging ? "placing…" : "drag the face into place")
+          : (isDragging ? "shaping…" : "↕ height  ↔ band width")}
       </p>
     </div>
   );
@@ -493,90 +521,223 @@ function PartChip({
   );
 }
 
-/** Horizontal scrollable row of part chips with a label. */
-function PartRow({
-  label,
-  parts,
-  selectedIndex,
-  onSelect,
+// ── DrawPopout ─────────────────────────────────────────────────────────────
+// The drawing pads pop out of the page in a centered overlay with an ×.
+// Rendered via a portal to <body>: `position: fixed` cannot be used inside
+// the builder because its @container root is a containing block for fixed
+// descendants.
+function DrawPopout({
+  title,
+  onClose,
+  children,
 }: {
-  label: string;
-  parts: { id: string; label: string; render: (cx: number, cy: number, s: number, ink: string) => React.ReactNode }[];
-  selectedIndex: number;
-  onSelect: (i: number) => void;
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
 }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span
-        style={{
-          fontFamily: "var(--font-hand)",
-          fontSize: "0.75rem",
-          color: "var(--color-clay-ink-muted)",
-          paddingLeft: 2,
-        }}
-      >
-        {label}
-      </span>
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  if (!mounted) return null;
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 80,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        background: "rgba(44,24,16,0.35)",
+        backdropFilter: "blur(3px)",
+        WebkitBackdropFilter: "blur(3px)",
+      }}
+    >
       <div
         style={{
-          display: "flex",
-          gap: 5,
-          overflowX: "auto",
-          paddingBottom: 2,
-          WebkitOverflowScrolling: "touch",
+          position: "relative",
+          background: "#F5F0E8",
+          borderRadius: 18,
+          border: "2px solid #2C1810",
+          boxShadow: "0 12px 40px rgba(44,24,16,0.35)",
+          padding: "34px 18px 14px",
+          maxWidth: "min(92vw, 420px)",
+          maxHeight: "90vh",
+          overflowY: "auto",
         }}
       >
-        {parts.map((part, i) => (
-          <PartChip
-            key={part.id}
-            part={part}
-            category={label}
-            isSelected={i === selectedIndex}
-            onClick={() => onSelect(i)}
-          />
-        ))}
+        <span
+          style={{
+            position: "absolute",
+            top: 10,
+            left: 16,
+            fontFamily: "var(--font-hand)",
+            fontSize: "0.9rem",
+            color: "#5C3D2E",
+          }}
+        >
+          {title}
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close drawing pad"
+          style={{
+            position: "absolute",
+            top: 7,
+            right: 8,
+            width: 28,
+            height: 28,
+            borderRadius: "50%",
+            border: "1.5px solid rgba(44,24,16,0.35)",
+            background: "rgba(232,213,176,0.5)",
+            color: "#2C1810",
+            cursor: "pointer",
+            fontSize: "1rem",
+            lineHeight: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          ×
+        </button>
+        {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
-/** Horizontal scrollable row for accessory (keyed by string id, not index). */
-function AccessoryRow({
-  selectedId,
-  onSelect,
+// ── PartCarousel ───────────────────────────────────────────────────────────
+// Space-efficient face-part picker: category tabs + a swipeable scroll-snap
+// pager showing one category per page (all of its options visible, wrapping).
+// Swiping the row and tapping a tab stay in sync via the scroll position.
+function PartCarousel({
+  mii,
+  updateMii,
 }: {
-  selectedId: string;
-  onSelect: (id: string) => void;
+  mii: MiiFace;
+  updateMii: (u: Partial<MiiFace>) => void;
 }) {
+  const pagerRef = useRef<HTMLDivElement>(null);
+  const [page, setPage] = useState(0);
+
+  const categories: { label: string; chips: React.ReactNode }[] = [
+    {
+      label: "Eyes",
+      chips: EYE_PARTS.map((part, i) => (
+        <PartChip key={part.id} part={part} category="Eyes" isSelected={i === mii.eyes} onClick={() => updateMii({ eyes: i })} />
+      )),
+    },
+    {
+      label: "Brows",
+      chips: BROW_PARTS.map((part, i) => (
+        <PartChip key={part.id} part={part} category="Brows" isSelected={i === mii.brows} onClick={() => updateMii({ brows: i })} />
+      )),
+    },
+    {
+      label: "Mouth",
+      chips: MOUTH_PARTS.map((part, i) => (
+        <PartChip key={part.id} part={part} category="Mouth" isSelected={i === mii.mouth} onClick={() => updateMii({ mouth: i })} />
+      )),
+    },
+    {
+      label: "Cheeks",
+      chips: CHEEK_PARTS.map((part, i) => (
+        <PartChip key={part.id} part={part} category="Cheeks" isSelected={i === mii.cheeks} onClick={() => updateMii({ cheeks: i })} />
+      )),
+    },
+    {
+      label: "Extras",
+      chips: ACCESSORY_PARTS.map((part) => (
+        <PartChip key={part.id} part={part} category="Accessory" isSelected={part.id === mii.accessory} onClick={() => updateMii({ accessory: part.id })} />
+      )),
+    },
+  ];
+
+  function goTo(i: number) {
+    const el = pagerRef.current;
+    if (el) el.scrollTo({ left: i * el.clientWidth, behavior: "smooth" });
+    setPage(i);
+  }
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span
-        style={{
-          fontFamily: "var(--font-hand)",
-          fontSize: "0.75rem",
-          color: "var(--color-clay-ink-muted)",
-          paddingLeft: 2,
-        }}
-      >
-        Accessory
-      </span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {/* Category tabs */}
+      <div style={{ display: "flex", gap: 4, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        {categories.map((c, i) => (
+          <button
+            key={c.label}
+            type="button"
+            onClick={() => goTo(i)}
+            aria-pressed={page === i}
+            style={{
+              fontFamily: "var(--font-hand)",
+              fontSize: "0.75rem",
+              padding: "3px 11px",
+              borderRadius: 999,
+              border: "none",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              background: page === i ? "#B85C2A" : "rgba(232,213,176,0.5)",
+              color: page === i ? "#F5F0E8" : "var(--color-clay-ink-muted)",
+              transition: "background 0.12s, color 0.12s",
+            }}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Swipeable pager — one snap page per category */}
       <div
+        ref={pagerRef}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          const p = Math.round(el.scrollLeft / el.clientWidth);
+          if (p !== page) setPage(p);
+        }}
         style={{
           display: "flex",
-          gap: 5,
           overflowX: "auto",
-          paddingBottom: 2,
+          scrollSnapType: "x mandatory",
           WebkitOverflowScrolling: "touch",
+          scrollbarWidth: "none",
         }}
+        aria-label="Swipe between face part categories"
       >
-        {ACCESSORY_PARTS.map((part) => (
-          <PartChip
-            key={part.id}
-            part={part}
-            category="Accessory"
-            isSelected={part.id === selectedId}
-            onClick={() => onSelect(part.id)}
-          />
+        {categories.map((c) => (
+          <div
+            key={c.label}
+            style={{
+              minWidth: "100%",
+              scrollSnapAlign: "start",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 5,
+              alignContent: "flex-start",
+              padding: "2px 2px 4px",
+            }}
+          >
+            {c.chips}
+          </div>
         ))}
       </div>
     </div>
@@ -676,31 +837,7 @@ function FaceStudio({
       {/* Build tab */}
       {tab === "build" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <PartRow
-            label="Eyes"
-            parts={EYE_PARTS}
-            selectedIndex={mii.eyes}
-            onSelect={(i) => updateMii({ eyes: i })}
-          />
-          <PartRow
-            label="Brows"
-            parts={BROW_PARTS}
-            selectedIndex={mii.brows}
-            onSelect={(i) => updateMii({ brows: i })}
-          />
-          <PartRow
-            label="Mouth"
-            parts={MOUTH_PARTS}
-            selectedIndex={mii.mouth}
-            onSelect={(i) => updateMii({ mouth: i })}
-          />
-          <PartRow
-            label="Cheeks"
-            parts={CHEEK_PARTS}
-            selectedIndex={mii.cheeks}
-            onSelect={(i) => updateMii({ cheeks: i })}
-          />
-          <AccessoryRow selectedId={mii.accessory} onSelect={(id) => updateMii({ accessory: id })} />
+          <PartCarousel mii={mii} updateMii={updateMii} />
 
           {/* Ink color row */}
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -782,16 +919,9 @@ function FaceStudio({
         </div>
       )}
 
-      {/* Doodle tab */}
+      {/* Doodle pad — pops out of the page; × keeps the drawing */}
       {tab === "doodle" && (
-        <div
-          style={{
-            background: "rgba(232,213,176,0.25)",
-            borderRadius: 12,
-            padding: "12px 12px 8px",
-            border: "1.5px dashed rgba(44,24,16,0.2)",
-          }}
-        >
+        <DrawPopout title="doodle a face" onClose={() => setTab("build")}>
           <FaceDrawPad
             onChange={handleDrawChange}
             glazeColor={glazeHex}
@@ -801,7 +931,7 @@ function FaceStudio({
                 : []
             }
           />
-        </div>
+        </DrawPopout>
       )}
     </div>
   );
@@ -897,11 +1027,16 @@ function FaceAdjust({
 }
 
 // ── StickyMiniPreview ──────────────────────────────────────────────────────
-// Compact live pot pill that sticks to the top of the viewport once the
-// wheel scrolls away (narrow containers only — hidden at @3xl where the
-// wheel column is sticky instead). Zero-height rail so it never shifts
-// layout. Must stay `sticky` (not `fixed`): the builder root is a
-// size container, which makes it the containing block for fixed children.
+// The whole pot, live, pinned to the top of the viewport once the wheel
+// scrolls away (narrow containers only — hidden at @3xl where the wheel
+// column is sticky instead). Tap = jump back to the wheel. Press-and-hold =
+// peek: the pot blows up full-size over the controls until released.
+// Zero-height rail so it never shifts layout. The pinned card must stay
+// `sticky` (not `fixed`): the builder root is a size container, which makes
+// it the containing block for fixed children — the peek overlay escapes via
+// a portal to <body> instead.
+const PEEK_HOLD_MS = 220;
+
 function StickyMiniPreview({
   visible,
   shape,
@@ -915,12 +1050,52 @@ function StickyMiniPreview({
   pattern: string;
   onJump: () => void;
 }) {
+  const [peek, setPeek] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const holdTimerRef = useRef<number | null>(null);
+  const didPeekRef = useRef(false);
+  useEffect(() => setMounted(true), []);
+
+  function clearHoldTimer() {
+    if (holdTimerRef.current !== null) {
+      window.clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+  }
+
+  function handlePointerDown(e: React.PointerEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* best-effort */ }
+    didPeekRef.current = false;
+    clearHoldTimer();
+    holdTimerRef.current = window.setTimeout(() => {
+      didPeekRef.current = true;
+      setPeek(true);
+    }, PEEK_HOLD_MS);
+  }
+
+  function handlePointerUp() {
+    clearHoldTimer();
+    if (didPeekRef.current) {
+      setPeek(false);
+    } else {
+      onJump();
+    }
+  }
+
+  function handlePointerCancel() {
+    clearHoldTimer();
+    setPeek(false);
+  }
+
   return (
-    <div className="sticky z-30 h-0 @3xl:hidden" style={{ top: 10 }}>
+    <div className="sticky z-30 h-0 @3xl:hidden" style={{ top: 8 }}>
       <button
         type="button"
-        onClick={onJump}
-        aria-label="Show the pottery wheel"
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        aria-label="Tap to show the pottery wheel, hold to see your pot full size"
         aria-hidden={!visible}
         tabIndex={visible ? 0 : -1}
         style={{
@@ -928,28 +1103,55 @@ function StickyMiniPreview({
           left: "50%",
           transform: visible
             ? "translateX(-50%) translateY(0)"
-            : "translateX(-50%) translateY(-12px)",
+            : "translateX(-50%) translateY(-16px)",
           opacity: visible ? 1 : 0,
           pointerEvents: visible ? "auto" : "none",
           display: "flex",
+          flexDirection: "column",
           alignItems: "center",
-          gap: 8,
-          padding: "4px 14px 4px 8px",
-          borderRadius: 999,
+          justifyContent: "center",
+          padding: "6px 6px 3px",
+          borderRadius: 20,
           border: "1.5px solid rgba(44,24,16,0.25)",
-          background: "rgba(250,243,225,0.85)",
+          background: "rgba(250,243,225,0.88)",
           backdropFilter: "blur(6px)",
           WebkitBackdropFilter: "blur(6px)",
           boxShadow: "0 4px 14px rgba(44,24,16,0.18)",
           cursor: "pointer",
+          touchAction: "none",
+          userSelect: "none",
+          WebkitUserSelect: "none",
           transition: "opacity 0.18s ease, transform 0.18s ease",
         }}
       >
-        <VaseAvatar shape={shape} glaze={glaze} pattern={pattern} size={52} />
-        <span style={{ fontFamily: "var(--font-hand)", fontSize: "0.78rem", color: "#5C3D2E" }}>
-          ↑ your pot
+        <VaseAvatar shape={shape} glaze={glaze} pattern={pattern} size={104} />
+        <span style={{ fontFamily: "var(--font-hand)", fontSize: "0.62rem", color: "rgba(92,61,46,0.65)" }}>
+          hold to zoom
         </span>
       </button>
+
+      {/* Full-size peek overlay while held */}
+      {mounted && peek &&
+        createPortal(
+          <div
+            aria-hidden="true"
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 90,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "rgba(245,240,232,0.92)",
+              backdropFilter: "blur(4px)",
+              WebkitBackdropFilter: "blur(4px)",
+              pointerEvents: "none",
+            }}
+          >
+            <VaseAvatar shape={shape} glaze={glaze} pattern={pattern} size={Math.min(340, typeof window !== "undefined" ? window.innerWidth - 60 : 340)} />
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
@@ -973,6 +1175,9 @@ export default function AvatarBuilder({
   const [edge, setEdge] = useState<number>(0);
   // Manual face size / shape / location adjustment.
   const [faceT, setFaceT] = useState<FaceTransform>(DEFAULT_FACE_TRANSFORM);
+  // What dragging the wheel does. Falls back to sculpting when there is no face.
+  const [dragMode, setDragMode] = useState<"shape" | "face">("shape");
+  const effectiveDragMode = face === "none" ? "shape" : dragMode;
 
   // Shared state
   const [glaze,   setGlaze]   = useState<string>(defaultGlaze as string);
@@ -1085,9 +1290,47 @@ export default function AvatarBuilder({
             face={face}
             edge={edge}
             faceT={faceT}
+            dragMode={effectiveDragMode}
             onSculpt={handleSculpt}
             onSculptEnd={handleSculptEnd}
+            onFaceTChange={setFaceT}
           />
+
+          {/* Drag mode: sculpt the pot vs move the face */}
+          {face !== "none" && (
+            <div
+              role="group"
+              aria-label="What dragging the wheel does"
+              style={{
+                display: "flex",
+                border: "1.5px solid rgba(44,24,16,0.3)",
+                borderRadius: 999,
+                overflow: "hidden",
+                background: "rgba(232,213,176,0.35)",
+              }}
+            >
+              {(["shape", "face"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setDragMode(m)}
+                  aria-pressed={effectiveDragMode === m}
+                  style={{
+                    fontFamily: "var(--font-hand)",
+                    fontSize: "0.8rem",
+                    padding: "4px 14px",
+                    border: "none",
+                    cursor: "pointer",
+                    background: effectiveDragMode === m ? "#B85C2A" : "transparent",
+                    color: effectiveDragMode === m ? "#F5F0E8" : "#5C3D2E",
+                    transition: "background 0.12s ease, color 0.12s ease",
+                  }}
+                >
+                  {m === "shape" ? "sculpt pot" : "move face"}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Action buttons */}
           <div className="flex gap-2 flex-wrap justify-center">
