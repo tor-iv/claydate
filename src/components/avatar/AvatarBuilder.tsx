@@ -75,60 +75,26 @@ const WHEEL_STYLE = `
   100% { opacity: 0.4; }
 }
 
-/* ── Customizer stage (narrow containers only) ──────────────────────────
-   The builder becomes a fixed-height stage: pot on top at full size, all
-   options in a slide-up drawer (absolute inside the stage — position:fixed
-   is broken under the @container root). The @container block below undoes
-   everything at @3xl, where the two-column grid takes over. */
-.pot-stage {
-  position: relative;
-  height: min(86vh, 760px);
-  height: min(86dvh, 760px);
-  overflow: hidden;
-}
-.pot-sheet {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 42%;
-  display: flex;
-  flex-direction: column;
-  background: rgba(250, 243, 225, 0.97);
-  border: 1.5px solid rgba(44, 24, 16, 0.25);
-  border-bottom: none;
-  border-radius: 18px 18px 0 0;
-  box-shadow: 0 -6px 24px rgba(44, 24, 16, 0.18);
-  z-index: 20;
-}
-.pot-sheet-grip {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 10px 0 7px;
-  cursor: grab;
-  touch-action: none;
-  flex-shrink: 0;
-}
-.pot-sheet-body {
-  flex: 1;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  padding: 2px 10px 14px;
+/* ── Pot dock (narrow containers only) ──────────────────────────────────
+   Bitmoji/Zepeto-style: the interactive wheel pins to the top of the
+   viewport in an opaque band while the options scroll normally beneath.
+   The @container block undoes it at @3xl, where the two-column grid's own
+   sticky column takes over. */
+.pot-dock {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: var(--color-clay-cream, #F5F0E8);
+  box-shadow: 0 8px 16px -10px rgba(44, 24, 16, 0.35);
+  padding: 4px 0 8px;
 }
 @container (min-width: 48rem) {
-  .pot-stage { height: auto; overflow: visible; }
-  .pot-sheet {
+  .pot-dock {
     position: static;
-    height: auto !important;
     background: transparent;
-    border: none;
-    border-radius: 0;
     box-shadow: none;
-    z-index: auto;
+    padding: 0;
   }
-  .pot-sheet-grip { display: none; }
-  .pot-sheet-body { flex: none; overflow: visible; padding: 0; }
 }
 `;
 
@@ -187,6 +153,8 @@ interface WheelVasePreviewProps {
   faceT?: FaceTransform;
   /** What dragging the wheel does: sculpt the pot walls or move the face. */
   dragMode?: "shape" | "face";
+  /** Wheel pixel size — compact in the narrow-layout dock. */
+  previewSize?: number;
   /** Live sculpt during a drag: set height + widths together, no band-count resample. */
   onSculpt: (h: number, widths: number[]) => void;
   /** Drag released: settle the band count to the height's natural value. */
@@ -203,6 +171,7 @@ function WheelVasePreview({
   edge,
   faceT,
   dragMode = "shape",
+  previewSize,
   onSculpt,
   onSculptEnd,
   onFaceTChange,
@@ -231,7 +200,7 @@ function WheelVasePreview({
   });
   const [isDragging, setIsDragging] = useState(false);
 
-  const PREVIEW_SIZE = 220;
+  const PREVIEW_SIZE = previewSize ?? 220;
   const DRAG_THRESHOLD = 4; // pixels — must move at least this far to count as a drag
 
   function getRelativePos(e: React.PointerEvent): { relX: number; relY: number } {
@@ -1159,56 +1128,21 @@ export default function AvatarBuilder({
     setMode("throw");
   }
 
-  // ── Options drawer (narrow containers) ─────────────────────────────────
-  // The controls live in a slide-up sheet over the stage; snap points are
-  // collapsed (grip only), half, and tall. Height in px via inline style;
-  // the @3xl CSS resets it with height:auto !important.
-  const stageRef = useRef<HTMLDivElement>(null);
-  const [sheetPx, setSheetPx] = useState<number | null>(null); // null → 42% CSS fallback
-  // curH lives in the ref: pointerup can fire before React re-renders the
-  // state from the last pointermove, so state would be stale for fast flicks.
-  const sheetDragRef = useRef<{ startY: number; startH: number; curH: number; moved: boolean } | null>(null);
-  const SHEET_COLLAPSED = 56;
-
-  function sheetSnaps(): number[] {
-    const h = stageRef.current?.clientHeight ?? 700;
-    return [SHEET_COLLAPSED, Math.round(h * 0.42), Math.round(h * 0.76)];
-  }
-
-  function handleGripPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    e.preventDefault();
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* best-effort */ }
-    const startH = sheetPx ?? sheetSnaps()[1];
-    sheetDragRef.current = {
-      startY: e.clientY,
-      startH,
-      curH: startH,
-      moved: false,
-    };
-  }
-
-  function handleGripPointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    const d = sheetDragRef.current;
-    if (!d) return;
-    const dy = e.clientY - d.startY;
-    if (Math.abs(dy) > 5) d.moved = true;
-    const stageH = stageRef.current?.clientHeight ?? 700;
-    d.curH = Math.min(Math.round(stageH * 0.8), Math.max(SHEET_COLLAPSED, Math.round(d.startH - dy)));
-    setSheetPx(d.curH);
-  }
-
-  function handleGripPointerUp() {
-    const d = sheetDragRef.current;
-    sheetDragRef.current = null;
-    if (!d) return;
-    const snaps = sheetSnaps();
-    if (!d.moved) {
-      // Tap toggles half ↔ collapsed
-      setSheetPx(d.curH <= SHEET_COLLAPSED + 4 ? snaps[1] : SHEET_COLLAPSED);
-      return;
-    }
-    setSheetPx(snaps.reduce((a, b) => (Math.abs(b - d.curH) < Math.abs(a - d.curH) ? b : a)));
-  }
+  // ── Narrow-container detection ──────────────────────────────────────────
+  // JS mirror of the @3xl (48rem) container breakpoint: the wheel's pixel
+  // size is a prop, not CSS, so we shrink it on narrow layouts where the
+  // dock pins it to the top of the screen.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [isNarrow, setIsNarrow] = useState(false);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([entry]) => {
+      setIsNarrow(entry.contentRect.width < 768);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Surprise/start-over: under the wheel on wide layouts, at the top of the
   // options drawer on narrow ones (rendered twice, visibility-gated — the
@@ -1254,7 +1188,7 @@ export default function AvatarBuilder({
   );
 
   return (
-    <div className="@container">
+    <div ref={rootRef} className="@container">
       <style>{WHEEL_STYLE}</style>
 
       {/* Hidden inputs for form submission */}
@@ -1266,12 +1200,9 @@ export default function AvatarBuilder({
         </>
       )}
 
-      <div
-        ref={stageRef}
-        className="pot-stage flex flex-col gap-5 @3xl:grid @3xl:grid-cols-[minmax(0,300px)_minmax(0,1fr)] @3xl:items-start @3xl:gap-x-8"
-      >
-      {/* ── Preview column: sticky at @3xl so the pot stays in view ──────── */}
-      <div className="flex flex-col gap-5 @3xl:sticky @3xl:top-6 @3xl:self-start">
+      <div className="flex flex-col gap-5 @3xl:grid @3xl:grid-cols-[minmax(0,300px)_minmax(0,1fr)] @3xl:items-start @3xl:gap-x-8">
+      {/* ── Preview column: pot dock on narrow, sticky column at @3xl ─────── */}
+      <div className="pot-dock flex flex-col gap-5 @3xl:sticky @3xl:top-6 @3xl:self-start">
       {/* ── Pottery Wheel (throw mode) ─────────────────────────────────── */}
       {mode === "throw" && (
         <div className="flex flex-col items-center gap-3">
@@ -1284,6 +1215,7 @@ export default function AvatarBuilder({
             edge={edge}
             faceT={faceT}
             dragMode={effectiveDragMode}
+            previewSize={isNarrow ? 176 : 220}
             onSculpt={handleSculpt}
             onSculptEnd={handleSculptEnd}
             onFaceTChange={setFaceT}
@@ -1377,25 +1309,8 @@ export default function AvatarBuilder({
       )}
       </div>
 
-      {/* ── Controls column: slide-up drawer on narrow containers ────────── */}
-      <div
-        className="pot-sheet min-w-0"
-        style={sheetPx !== null ? { height: sheetPx } : undefined}
-      >
-      {/* Drawer grip — drag to resize, tap to toggle (hidden at @3xl) */}
-      <div
-        className="pot-sheet-grip"
-        role="button"
-        aria-label="Drag to resize the options drawer"
-        onPointerDown={handleGripPointerDown}
-        onPointerMove={handleGripPointerMove}
-        onPointerUp={handleGripPointerUp}
-        onPointerCancel={handleGripPointerUp}
-      >
-        <div style={{ width: 44, height: 5, borderRadius: 999, background: "rgba(44,24,16,0.3)" }} />
-      </div>
-
-      <div className="pot-sheet-body flex flex-col gap-5">
+      {/* ── Controls column: normal page flow under the dock ─────────────── */}
+      <div className="flex flex-col gap-5 min-w-0">
       {/* Action buttons live here on narrow layouts only */}
       {mode === "throw" && (
         <div className="flex flex-col items-center gap-3 @3xl:hidden">
@@ -1593,7 +1508,6 @@ export default function AvatarBuilder({
           </div>
         )}
       </section>
-      </div>
       </div>
       </div>
     </div>
