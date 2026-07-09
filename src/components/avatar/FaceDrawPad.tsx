@@ -254,7 +254,17 @@ export default function FaceDrawPad({ onChange, initialStrokes = [], brushColor 
     const rawPts = currentStrokeRef.current;
     currentStrokeRef.current = [];
 
-    if (rawPts.length < 4) return;
+    // A tap with no movement (e.g. placing an eye dot) only ever collects
+    // the single starting point. Duplicate it into a zero-length 2-point
+    // stroke so it round-trips through simplify/encode/parse like any other
+    // stroke — otherwise the dot is painted once to the canvas pixels but
+    // never saved to state, so it's invisible on the pot and vanishes on
+    // the next redraw.
+    if (rawPts.length === 2) {
+      rawPts.push(rawPts[0], rawPts[1]);
+    } else if (rawPts.length < 4) {
+      return;
+    }
 
     // Simplify with RDP (epsilon = 1.5px for the 160px canvas)
     const simplified = rdp(rawPts, 1.5);
