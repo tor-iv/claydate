@@ -80,7 +80,14 @@ function getLightness(hex: string): number {
  * replaced by quadratics through segment midpoints, so the sparse RDP-
  * simplified points render as one flowing line instead of visible corners.
  */
-function smoothStrokePath(pts: { x: number; y: number }[]): string {
+function smoothStrokePath(rawPts: { x: number; y: number }[]): string {
+  // Collapse consecutive duplicate points first. A tap stores its single
+  // point twice (zero-length stroke), and zero-length subpaths don't reliably
+  // paint their round caps (WebKit skips them) — dedupe so a tap falls into
+  // the 1-point dot case below.
+  const pts = rawPts.filter(
+    (p, i) => i === 0 || p.x !== rawPts[i - 1].x || p.y !== rawPts[i - 1].y
+  );
   if (pts.length === 0) return "";
   if (pts.length === 1) {
     // Single dot — tiny line so the round cap paints it

@@ -110,10 +110,23 @@ export default function FaceDrawPad({ onChange, initialStrokes = [], brushColor 
       const canvasPx = storedW <= 1 ? 1.6 : storedW <= 4 ? 3.5 : storedW <= 7 ? 6.0 : 6.0;
       ctx.strokeStyle = color;
       ctx.lineWidth = canvasPx;
+      const px = (i: number) => (pts[i] / 100) * PAD_SIZE;
+      // Tap dots collapse to identical points; canvas prunes zero-length
+      // segments, so paint those as a filled circle instead of a stroke.
+      let isDot = true;
+      for (let j = 2; j + 1 < pts.length; j += 2) {
+        if (pts[j] !== pts[0] || pts[j + 1] !== pts[1]) { isDot = false; break; }
+      }
+      if (isDot) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(px(0), px(1), canvasPx / 2, 0, Math.PI * 2);
+        ctx.fill();
+        continue;
+      }
       ctx.beginPath();
       // Smooth the simplified points with quadratics through midpoints, so
       // stored strokes redraw as flowing lines rather than visible corners.
-      const px = (i: number) => (pts[i] / 100) * PAD_SIZE;
       ctx.moveTo(px(0), px(1));
       let i = 2;
       for (; i + 3 < pts.length; i += 2) {
