@@ -27,10 +27,16 @@
   --font-body: var(--font-patrick-hand), 'Patrick Hand', cursive;
 }
 
+/* Secret Santa pages set --accent per request from the rotating alias. */
+@theme inline {
+  --color-accent: var(--accent);
+}
+
 /* ── Root & base ─────────────────────────────────────────────────────────── */
 
 :root {
   color-scheme: light;
+  --accent: #B85C2A;
 }
 
 *, *::before, *::after {
@@ -186,3 +192,15 @@ a[data-meetup-block]:focus-visible {
   outline: 2px solid var(--color-clay-rust);
   outline-offset: 1px;
 }
+
+/* ── Secret Santa notices ────────────────────────────────────────────────── */
+.notice {
+  border: 2px dashed rgba(44,24,16,0.35);
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  font-family: var(--font-hand);
+  font-size: 1.05rem;
+}
+.notice-error { background: rgba(212,132,122,0.25); }
+.notice-ok    { background: rgba(126,181,200,0.25); }
+select.hand-input { appearance: auto; }

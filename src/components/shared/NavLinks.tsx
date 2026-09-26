@@ -10,6 +10,7 @@ interface NavLinksProps {
 const BASE_NAV_LINKS = [
   { href: "/calendar",          label: "Calendar" },
   { href: "/calendar/upcoming", label: "Upcoming" },
+  { href: "/santa",             label: "🎁 Santa" },
 ];
 
 const NEW_MEETUP_LINK = { href: "/meetups/new", label: "New Meetup" };
@@ -23,7 +24,7 @@ export default function NavLinks({ showNewMeetup = true }: NavLinksProps) {
     <nav className="order-3 w-full md:order-none md:w-auto flex items-center justify-center gap-1">
       {links.map((link) => {
         // Exact-match: /calendar matches /calendar, /calendar/upcoming matches /calendar/upcoming
-        const isActive = pathname === link.href;
+        const isActive = link.href === "/santa" ? pathname.startsWith("/santa") : pathname === link.href;
         return (
           <Link
             key={link.href}

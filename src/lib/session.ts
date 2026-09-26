@@ -6,6 +6,8 @@ export interface SessionData {
   userId: string;
   userName: string;
   role?: "friend" | "guest";
+  /** Secret Santa: fingerprint of the reveal PIN hash once entered this session. */
+  santaKey?: string;
 }
 
 /** Returns true if the given role has write access (create meetups, RSVP, comment, upload). */

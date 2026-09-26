@@ -4,6 +4,7 @@ import { mkdirSync } from "fs";
 import { dirname } from "path";
 import { nanoid } from "nanoid";
 import * as schema from "./schema.ts";
+import { SANTA_DDL } from "./santa-ddl.ts";
 
 const DB_PATH = process.env.DB_PATH ?? "./data/claydate.db";
 const UPLOAD_DIR = process.env.DATA_DIR ?? "./data/uploads";
@@ -71,6 +72,7 @@ sqlite.exec(`
   );
   CREATE INDEX IF NOT EXISTS gallery_photos_meetup_id_idx ON gallery_photos (meetup_id);
 `);
+sqlite.exec(SANTA_DDL);
 
 const db = drizzle(sqlite, { schema });
 

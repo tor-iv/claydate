@@ -28,8 +28,11 @@ jobs:
           # ~10 min. Default command_timeout is 10m — raise it so the deploy
           # isn't killed mid-build.
           command_timeout: 30m
+          script_stop: true
           script: |
-            cd /opt/claydate
-            git pull origin main
-            docker compose up -d --build
+            cd /opt/claydate && git pull origin main
+            # claydate is a colocated service in the fieldhouse compose stack
+            cd /opt/fieldhouse
+            docker compose build claydate
+            docker compose up -d --force-recreate claydate
             docker image prune -f
