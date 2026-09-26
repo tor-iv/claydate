@@ -6,3 +6,11 @@ export const DEFAULT_LOCATION = "Slo Slo Studio";
 // Passcodes — override via env in production
 export const FRIEND_PASSCODE = (process.env.FRIEND_PASSCODE ?? "sloslo").toLowerCase().trim();
 export const GUEST_PASSCODE = (process.env.GUEST_PASSCODE ?? "throw").toLowerCase().trim();
+
+// Secret Santa: comma-separated user names allowed to run the draw (case-insensitive)
+export const SANTA_ORGANIZERS = (process.env.SANTA_ORGANIZERS ?? "")
+  .split(",")
+  .map((n) => n.trim().toLowerCase())
+  .filter(Boolean);
+export const SANTA_LIMITS = { wishTitle: 120, wishUrl: 500, wishPrice: 40, houseRules: 2000, budget: 40, note: 80 };
+export const SANTA_UNSEAL_CONFIRMATION = "UNSEAL";

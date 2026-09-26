@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { mkdirSync } from "fs";
 import { dirname } from "path";
 import * as schema from "./schema";
+import { SANTA_DDL } from "./santa-ddl";
 import { DB_PATH, UPLOAD_DIR } from "../lib/constants";
 
 // Ensure data directories exist on startup
@@ -12,8 +13,13 @@ mkdirSync(UPLOAD_DIR, { recursive: true });
 function createDb() {
   const sqlite = new Database(DB_PATH);
 
-  // Performance and integrity pragmas
-  sqlite.pragma("journal_mode = WAL");
+  // Performance and integrity pragmas. WAL can hit SQLITE_BUSY when parallel
+  // `next build` workers open the placeholder DB at once; it's a nicety, not a need.
+  try {
+    sqlite.pragma("journal_mode = WAL");
+  } catch {
+    /* another worker holds the lock; continue in rollback-journal mode */
+  }
   sqlite.pragma("foreign_keys = ON");
 
   // Bootstrap all tables — raw SQL must exactly match Drizzle schema definitions
@@ -74,7 +80,7 @@ function createDb() {
     );
 
     CREATE INDEX IF NOT EXISTS gallery_photos_meetup_id_idx ON gallery_photos (meetup_id);
-  `);
+  ` + SANTA_DDL);
 
   return drizzle(sqlite, { schema });
 }
